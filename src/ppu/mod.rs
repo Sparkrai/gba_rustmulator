@@ -14,7 +14,8 @@ pub const SPRITE_TILES_START_ADDRESS: usize = 0x10000;
 pub const SPRITE_PALETTE_START_ADDRESS: u32 = 0x200;
 
 pub const PALETTE_RAM_SIZE: usize = 1 * 1024;
-pub const VRAM_SIZE: usize = 96 * 1024;
+pub const VRAM_SIZE: usize = 0x1_8000;
+pub const VRAM_MIRRORED_SIZE: usize = 0x2_0000;
 pub const OAM_SIZE: usize = 1 * 1024;
 
 // TODO: Add green swap
@@ -87,6 +88,7 @@ pub enum ESpriteMode {
 	ObjWindow,
 }
 
+#[derive(Debug, Copy, Clone)]
 pub struct Color {
 	red: f32,
 	green: f32,
@@ -242,6 +244,15 @@ impl<'a> SpriteEntry<'a> {
 	}
 }
 
+fn compute_vram_address(address: u32) -> usize {
+	let clamped_address = address as usize & (VRAM_MIRRORED_SIZE - 1);
+	if clamped_address >= VRAM_SIZE && clamped_address < VRAM_MIRRORED_SIZE {
+		clamped_address - (VRAM_MIRRORED_SIZE - VRAM_SIZE)
+	} else {
+		clamped_address
+	}
+}
+
 pub struct PPU {
 	// Registers
 	disp_cnt: DisplayControl,
@@ -382,8 +393,16 @@ impl PPU {
 	}
 
 	pub fn render(&mut self) -> Vec<f32> {
-		let mut pixels = vec![1.0; SCREEN_TOTAL_PIXELS * 3];
+		let mut pixels;
 		if !self.get_disp_cnt().get_forced_blank() {
+			let backdrop_color = Color::new(self.read_16(PALETTE_RAM_ADDR as u32));
+			pixels = [backdrop_color.get_red(), backdrop_color.get_green(), backdrop_color.get_blue()]
+				.iter()
+				.cloned()
+				.cycle()
+				.take(SCREEN_TOTAL_PIXELS * 3)
+				.collect();
+
 			if let Some(video_mode) = self.get_disp_cnt().get_bg_mode() {
 				match video_mode {
 					EVideoMode::Mode0 | EVideoMode::Mode1 | EVideoMode::Mode2 => {
@@ -490,7 +509,7 @@ impl PPU {
 
 												if palette_entry != 0 {
 													let palette_offset = bg_map[12..16].load_le::<u32>() * 16;
-													let palette_index = palette_entry & (0xff << ((tile_number as u32 & 1) * 8));
+													let palette_index = palette_entry & (0xff << ((tile_pixel as u32 & 1) * 8));
 													let color_address = PALETTE_RAM_ADDR as u32 + (palette_offset + palette_index) * 2;
 													let color = Color::new(self.read_16(color_address));
 
@@ -625,6 +644,8 @@ impl PPU {
 					}
 				}
 			}
+		} else {
+			pixels = vec![1.0; SCREEN_TOTAL_PIXELS * 3];
 		}
 
 		pixels
@@ -1131,7 +1152,10 @@ impl MemoryInterface for PPU {
 				}
 			}
 			PALETTE_RAM_ADDR => self.palette_ram[(address & 0x3ff) as usize],
-			VRAM_ADDR => self.vram[(address & 0x17fff) as usize],
+			VRAM_ADDR => {
+				let clamped_address = compute_vram_address(address);
+				self.vram[clamped_address]
+			}
 			OAM_ADDR => self.oam[(address & 0x3ff) as usize],
 			_ => 0x0, // TODO: Return proper invalid value
 		}
@@ -1193,6 +1217,7 @@ impl MemoryInterface for PPU {
 				*(self.palette_ram.as_ptr().add(((address & 0x3ff) as usize) & !0x1) as *mut u16) = (value as u16) * 0x101;
 			},
 			VRAM_ADDR => {
+				let clamped_address = compute_vram_address(address);
 				let end_bg_address;
 				if let Some(video_mode) = self.get_disp_cnt().get_bg_mode() {
 					end_bg_address = if video_mode == EVideoMode::Mode3 || video_mode == EVideoMode::Mode4 || video_mode == EVideoMode::Mode5 {
@@ -1204,9 +1229,9 @@ impl MemoryInterface for PPU {
 					end_bg_address = 0x0600_FFFF;
 				}
 
-				if address >= 0x0600_0000 && address < end_bg_address {
+				if clamped_address >= 0x0600_0000 && clamped_address < end_bg_address {
 					unsafe {
-						*(self.vram.as_ptr().add(((address & 0x17fff) as usize) & !0x1) as *mut u16) = (value as u16) * 0x101;
+						*(self.vram.as_ptr().add(clamped_address & !0x1) as *mut u16) = (value as u16) * 0x101;
 					}
 				}
 			}
@@ -1236,7 +1261,10 @@ impl MemoryInterface for PPU {
 					}
 				}
 				PALETTE_RAM_ADDR => *(self.palette_ram.as_ptr().add((address & 0x3ff) as usize) as *mut u16) as u16,
-				VRAM_ADDR => *(self.vram.as_ptr().add((address & 0x17fff) as usize) as *mut u16) as u16,
+				VRAM_ADDR => {
+					let clamped_address = compute_vram_address(address);
+					*(self.vram.as_ptr().add(clamped_address) as *mut u16) as u16
+				}
 				OAM_ADDR => *(self.oam.as_ptr().add((address & 0x3ff) as usize) as *mut u16) as u16,
 				_ => 0x0, // TODO: Return proper invalid value
 			}
@@ -1294,7 +1322,10 @@ impl MemoryInterface for PPU {
 					}
 				}
 				PALETTE_RAM_ADDR => *(self.palette_ram.as_ptr().add((address & 0x3ff) as usize) as *mut u16) = value,
-				VRAM_ADDR => *(self.vram.as_ptr().add((address & 0x17fff) as usize) as *mut u16) = value,
+				VRAM_ADDR => {
+					let clamped_address = compute_vram_address(address);
+					*(self.vram.as_ptr().add(clamped_address) as *mut u16) = value
+				}
 				OAM_ADDR => *(self.oam.as_ptr().add((address & 0x3ff) as usize) as *mut u16) = value,
 				_ => {}
 			}
@@ -1318,7 +1349,10 @@ impl MemoryInterface for PPU {
 					}
 				}
 				PALETTE_RAM_ADDR => *(self.palette_ram.as_ptr().add((address & 0x3ff) as usize) as *mut u32) as u32,
-				VRAM_ADDR => *(self.vram.as_ptr().add((address & 0x17fff) as usize) as *mut u32) as u32,
+				VRAM_ADDR => {
+					let clamped_address = compute_vram_address(address);
+					*(self.vram.as_ptr().add(clamped_address) as *mut u32) as u32
+				}
 				OAM_ADDR => *(self.oam.as_ptr().add((address & 0x3ff) as usize) as *mut u32) as u32,
 				_ => 0x0, // TODO: Return proper invalid value
 			}
@@ -1407,7 +1441,10 @@ impl MemoryInterface for PPU {
 					}
 				}
 				PALETTE_RAM_ADDR => *(self.palette_ram.as_ptr().add((address & 0x3ff) as usize) as *mut u32) = value,
-				VRAM_ADDR => *(self.vram.as_ptr().add((address & 0x17fff) as usize) as *mut u32) = value,
+				VRAM_ADDR => {
+					let clamped_address = compute_vram_address(address);
+					*(self.vram.as_ptr().add(clamped_address) as *mut u32) = value
+				}
 				OAM_ADDR => *(self.oam.as_ptr().add((address & 0x3ff) as usize) as *mut u32) = value,
 				_ => {}
 			}

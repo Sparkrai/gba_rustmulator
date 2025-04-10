@@ -198,8 +198,8 @@ fn main() {
 
 					// NOTE: Render window!!!
 					Window::new(im_str!("Render"))
-						.size([0.0, 0.0], Condition::Always)
-						.resizable(false)
+						.size([0.0, 0.0], Condition::FirstUseEver)
+						.resizable(true)
 						.position([900.0, 600.0], Condition::FirstUseEver)
 						.build(&ui, || {
 							let frame_texture = bus.ppu.render();
@@ -215,7 +215,7 @@ fn main() {
 								},
 							};
 							let texture_id = renderer.textures().insert(texture);
-							Image::new(texture_id, [240.0, 160.0]).build(&ui);
+							Image::new(texture_id, [480.0, 320.0]).build(&ui);
 						});
 
 					if show_cpu_debug_window {
