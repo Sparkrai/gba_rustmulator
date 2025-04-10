@@ -3,6 +3,7 @@ use std::io::Read;
 
 use cpu::*;
 use memory::*;
+use bitvec::prelude::*;
 
 mod cpu;
 mod memory;
@@ -22,17 +23,82 @@ fn main() {
 	if File::open("data/demos/hello.gba").expect("Cartridge couldn't be opened!").read_to_end(&mut cartridge_data).is_ok() {
 		bus.load_cartridge(&cartridge_data);
 
-		let mut thumb_mode = false;
-		let mut pc = 0;
-		while pc + 2 < bios_data.len() {
-			if thumb_mode {
-				decode_thumb(&mut thumb_mode, &mut bios_data, &mut pc);
-			} else {
-				decode_arm(&mut thumb_mode, &mut bios_data, &mut pc);
-			}
+		loop {
+			decode(&mut cpu, &mut bus);
 		}
+
+//		let mut thumb_mode = false;
+//		let mut pc = 0;
+//		while pc + 2 < bios_data.len() {
+//			if thumb_mode {
+//				disassemble_thumb(&mut thumb_mode, &mut bios_data, &mut pc);
+//			} else {
+//				disassemble_arm(&mut thumb_mode, &mut bios_data, &mut pc);
+//			}
+//		}
 	} else {
 		println!("Cartridge couldn't be read!");
+	}
+}
+
+fn decode(cpu: &mut CPU, bus: &mut MemoryBus) {
+	let pc = cpu.registers[PROGRAM_COUNTER_REGISTER];
+
+	// NOTE: Read CPU state
+	if cpu.cpsr.get_t() {
+		let instruction = bus.read_16(pc);
+	} else {
+		let instruction = bus.read_32(pc);
+		disassemble_arm(instruction, pc as usize);
+
+		if (0x0fff_fff0 & instruction) == 0x012f_ff10 {
+			// Activate Thumb Mode
+			//cpu.cpsr.set_t(true);
+		} else if (0x0e00_0000 & instruction) == 0x0a00_0000 { // Branch
+			if 0x0100_0000 & instruction > 0 {
+				// Branch with Link
+				cpu.registers[LINK_REGISTER_REGISTER] = cpu.registers[PROGRAM_COUNTER_REGISTER] + 4;
+			}
+
+			let offset = (0x00ff_ffff & instruction) as i32;
+			cpu.registers[PROGRAM_COUNTER_REGISTER] = (cpu.registers[PROGRAM_COUNTER_REGISTER] as i32 + 8 + (offset * 4)) as u32;
+			return;
+		}  else if (0x0c00_0000 & instruction) == 0x0000_0000 {
+			let i = (0x0200_0000 & instruction) > 0;
+			let s = if (0x0010_0000 & instruction) > 0 { "S" } else { "" };
+			let rn = (instruction & 0x000f_0000) >> 16;
+			let rd = (instruction & 0x0000_f000) >> 12;
+
+			let op2;
+			let shifter_carry_out;
+			let rm = if i {
+				let rot = ((0x0000_0f00 & instruction) >> 8);
+				op2 = (0x0000_00ff & instruction).rotate_right(rot * 2);
+
+				if rot == 0 {
+					shifter_carry_out = cpu.cpsr.get_c();
+				} else {
+					shifter_carry_out = (op2 & 0x800_0000) > 0;
+				}
+			} else {
+				op2 = 0;
+				shifter_carry_out = false;
+			};
+
+			match (0x01e0_0000 & instruction) >> 21 {
+				// CMP
+				0xa => {
+					let (result, overflowed) = rn.overflowing_sub(op2);
+					cpu.cpsr.set_n((result & 0x800_0000) > 0);
+					cpu.cpsr.set_z(result == 0);
+					cpu.cpsr.set_c(!overflowed);
+					cpu.cpsr.set_v(overflowed)
+				},
+				_ => {}
+			}
+		}
+
+		cpu.registers[PROGRAM_COUNTER_REGISTER] += 4;
 	}
 }
 
@@ -40,7 +106,27 @@ fn print_assembly_line(line: &String, pc: usize) {
 	println!("{:#06X}| {}", pc, line);
 }
 
-fn decode_thumb(thumb_mode: &mut bool, data: &mut Vec<u8>, pc: &mut usize) {
+fn disassemble_cond(cond: u8) -> &'static str {
+	match cond {
+		0x0 => "EQ",
+		0x1 => "NE",
+		0x2 => "CS",
+		0x3 => "CC",
+		0x4 => "MI",
+		0x5 => "PL",
+		0x6 => "VS",
+		0x7 => "VC",
+		0x8 => "HI",
+		0x9 => "LS",
+		0xa => "GE",
+		0xb => "LT",
+		0xc => "GT",
+		0xd => "LE",
+		_ => "",
+	}
+}
+
+fn disassemble_thumb(thumb_mode: &mut bool, data: &mut Vec<u8>, pc: &mut usize) {
 	let bytes: [u8; 2] = [data[*pc], data[*pc + 1]];
 	let instruction = u16::from_le_bytes(bytes);
 	if (0xf800 & instruction) == 0x1800 {
@@ -243,27 +329,24 @@ fn decode_thumb(thumb_mode: &mut bool, data: &mut Vec<u8>, pc: &mut usize) {
 	*pc += 2;
 }
 
-fn decode_arm(thumb_mode: &mut bool, data: &mut Vec<u8>, pc: &mut usize) {
-	let bytes: [u8; 4] = [data[*pc], data[*pc + 1], data[*pc + 2], data[*pc + 3]];
-	let instruction = u32::from_le_bytes(bytes);
-	let cond = instruction >> (32 - 4);
+fn disassemble_arm(instruction: u32, pc: usize) {
+	let cond = (instruction >> (32 - 4)) as u8;
 	if (0x0fff_fff0 & instruction) == 0x012f_ff10 {
-		*thumb_mode = !*thumb_mode;
-		print_assembly_line(&format!("BX {} R{}", cond, instruction & 0x0000_000f), *pc);
+		print_assembly_line(&format!("BX {} R{}", cond, instruction & 0x0000_000f), pc);
 		println!("THUMB ------------------------------------------------------------------------------------------------------------------------ THUMB");
 	} else if (0x0e00_0000 & instruction) == 0x0a00_0000 {
 		if 1 << 24 & instruction > 0 {
-			print_assembly_line(&format!("BL {} R{}", cond, instruction & 0x0000_000f), *pc);
+			print_assembly_line(&format!("BL {} #{:#X}", disassemble_cond(cond), instruction & 0x00ff_ffff), pc);
 		} else {
-			print_assembly_line(&format!("B {} R{}", cond, instruction & 0x0000_000f), *pc);
+			print_assembly_line(&format!("B {} #{:#X}", disassemble_cond(cond), instruction & 0x00ff_ffff), pc);
 		}
 	} else if (0xe000_0010 & instruction) == 0x0600_0010 {
-		print_assembly_line(&format!("Undefined instruction!"), *pc);
+		print_assembly_line(&format!("Undefined instruction!"), pc);
 	} else if (0x0fb0_0ff0 & instruction) == 0x0100_0090 {
 		if 1 << 22 & instruction > 0 {
-			print_assembly_line(&format!("SWPB R{}, R{}, R{}", (instruction & 0x0000_f000) >> 12, instruction & 0x0000_000f, (instruction & 0x000f_0000) >> 16), *pc);
+			print_assembly_line(&format!("SWPB R{}, R{}, R{}", (instruction & 0x0000_f000) >> 12, instruction & 0x0000_000f, (instruction & 0x000f_0000) >> 16), pc);
 		} else {
-			print_assembly_line(&format!("SWP R{}, R{}, R{}", (instruction & 0x0000_f000) >> 12, instruction & 0x0000_000f, (instruction & 0x000f_0000) >> 16), *pc);
+			print_assembly_line(&format!("SWP R{}, R{}, R{}", (instruction & 0x0000_f000) >> 12, instruction & 0x0000_000f, (instruction & 0x000f_0000) >> 16), pc);
 		}
 	} else if (0x0f00_00f0 & instruction) == 0x0000_0090 {
 		let s = if (0x0010_0000 & instruction) > 0 { "S" } else { "" };
@@ -280,12 +363,12 @@ fn decode_arm(thumb_mode: &mut bool, data: &mut Vec<u8>, pc: &mut usize) {
 		}
 
 		// TODO: Revisit params!!!
-		print_assembly_line(&format!("{}{} R{}, R{}, R{}", op, s, (instruction & 0x000f_0000) >> 16, instruction & 0x0000_000f, (instruction & 0x0000_0f00) >> 8), *pc);
+		print_assembly_line(&format!("{}{} R{}, R{}, R{}", op, s, (instruction & 0x000f_0000) >> 16, instruction & 0x0000_000f, (instruction & 0x0000_0f00) >> 8), pc);
 	} else if (0x0fbf_0fff & instruction) == 0x010f_0000 {
 		if (instruction & 0x0010_0000) > 0 {
-			print_assembly_line(&format!("MRS R{}, CPSR", (instruction & 0x0000_f000) >> 12, ), *pc);
+			print_assembly_line(&format!("MRS R{}, CPSR", (instruction & 0x0000_f000) >> 12, ), pc);
 		} else {
-			print_assembly_line(&format!("MRS R{}, SPSR", (instruction & 0x0000_f000) >> 12, ), *pc);
+			print_assembly_line(&format!("MRS R{}, SPSR", (instruction & 0x0000_f000) >> 12, ), pc);
 		}
 	} else if (0x0db0_f000 & instruction) == 0x0129_f000 {
 		let mut fields = String::from("");
@@ -306,16 +389,16 @@ fn decode_arm(thumb_mode: &mut bool, data: &mut Vec<u8>, pc: &mut usize) {
 		}
 		let psr = if (instruction & 0x0010_0000) > 0 { "CPSR" } else { "SPSR" };
 		if (instruction & 0x0200_0000) > 0 {
-			print_assembly_line(&format!("MSR {}{}, #{:#X}", psr, fields, instruction & 0x0000_00ff), *pc);
+			print_assembly_line(&format!("MSR {}{}, #{:#X}", psr, fields, instruction & 0x0000_00ff), pc);
 		} else {
-			print_assembly_line(&format!("MSR {}{}, R{}", psr, fields, instruction & 0x0000_00ff), *pc);
+			print_assembly_line(&format!("MSR {}{}, R{}", psr, fields, instruction & 0x0000_00ff), pc);
 		}
 	} else if (0x0c00_0000 & instruction) == 0x0400_0000 {
 		let b = if (0x0040_0000 & instruction) > 0 { "B" } else { "" };
 		let t = if (0x0020_0000 & instruction) > 0 { "T" } else { "" };
 		let l = if (0x0010_0000 & instruction) > 0 { "LDR" } else { "STR" };
 
-		print_assembly_line(&format!("{}{}{} R{}", l, b, t, (instruction & 0x0000_f000) >> 12), *pc);
+		print_assembly_line(&format!("{}{}{} R{}", l, b, t, (instruction & 0x0000_f000) >> 12), pc);
 	} else if (0x0e40_0F90 & instruction) == 0x0000_0090 {
 		let l = if (0x0010_0000 & instruction) > 0 { "LDR" } else { "STR" };
 		let op;
@@ -329,7 +412,7 @@ fn decode_arm(thumb_mode: &mut bool, data: &mut Vec<u8>, pc: &mut usize) {
 			panic!("ERROR!!!");
 		}
 
-		print_assembly_line(&format!("{}{} R{}", l, op, instruction & 0x0000_000f), *pc);
+		print_assembly_line(&format!("{}{} R{}", l, op, instruction & 0x0000_000f), pc);
 	} else if (0x0e40_0090 & instruction) == 0x0040_0090 {
 		let l = if (0x0010_0000 & instruction) > 0 { "LDR" } else { "STR" };
 		let op;
@@ -343,7 +426,7 @@ fn decode_arm(thumb_mode: &mut bool, data: &mut Vec<u8>, pc: &mut usize) {
 			panic!("ERROR!!!");
 		}
 
-		print_assembly_line(&format!("{}{} #{:#X}", l, op, (instruction & 0x0000_0f00) >> 4 | instruction & 0x0000_000f), *pc);
+		print_assembly_line(&format!("{}{} #{:#X}", l, op, (instruction & 0x0000_0f00) >> 4 | instruction & 0x0000_000f), pc);
 	} else if (0x0e00_0000 & instruction) == 0x0800_0000 {
 		let l = if (0x0010_0000 & instruction) > 0 { "LDM" } else { "STM" };
 		let w = if (0x0020_0000 & instruction) > 0 { "!" } else { "" };
@@ -360,12 +443,12 @@ fn decode_arm(thumb_mode: &mut bool, data: &mut Vec<u8>, pc: &mut usize) {
 		}
 		regs += " }";
 
-		print_assembly_line(&format!("{}{}{} R{}{}, {}{}", l, u, p, (instruction & 0x000f_0000) >> 16, w, regs, s), *pc);
+		print_assembly_line(&format!("{}{}{} R{}{}, {}{}", l, u, p, (instruction & 0x000f_0000) >> 16, w, regs, s), pc);
 	} else if (0x0f00_0000 & instruction) == 0x0f00_0000 {
-		print_assembly_line(&format!("SWI"), *pc);
+		print_assembly_line(&format!("SWI"), pc);
 	} else if (0x0c00_0000 & instruction) == 0x0000_0000 {
 		let i = (0x0200_0000 & instruction) > 0;
-		let s = if (0x0010_0000 & instruction) > 0 { "S" } else { "" };
+		let mut s = if (0x0010_0000 & instruction) > 0 { "S" } else { "" };
 		let mut rn = &*format!("R{},", (instruction & 0x000f_0000) >> 16);
 		let mut rd = &*format!("R{},", (instruction & 0x0000_f000) >> 12);
 
@@ -382,18 +465,22 @@ fn decode_arm(thumb_mode: &mut bool, data: &mut Vec<u8>, pc: &mut usize) {
 			0x8 => {
 				op = "TST";
 				rd = "";
+				s = "";
 			},
 			0x9 => {
 				op = "TEQ";
 				rd = "";
+				s = "";
 			},
 			0xa => {
 				op = "CMP";
 				rd = "";
+				s = "";
 			},
 			0xb => {
 				op = "CMN";
 				rd = "";
+				s = "";
 			},
 			0xc => op = "ORR",
 			0xd => {
@@ -414,10 +501,8 @@ fn decode_arm(thumb_mode: &mut bool, data: &mut Vec<u8>, pc: &mut usize) {
 			format!("R{}", 0x0000_000f & instruction)
 		};
 
-		print_assembly_line(&format!("{}{} {}{} {}", op, s, rd, rn, op2), *pc);
+		print_assembly_line(&format!("{}{} {} {}{} {}", op, s, disassemble_cond(cond), rd, rn, op2), pc);
 	} else {
-		print_assembly_line(&format!("Missing instruction!"), *pc);
+		print_assembly_line(&format!("Missing instruction!"), pc);
 	}
-
-	*pc += 4;
 }

@@ -3,9 +3,19 @@ use bitvec::prelude::*;
 pub type Gba32BitSlice = BitSlice<Lsb0, u32>;
 pub type GbaRegisterBits = BitArray<Lsb0, [u32; 1]>;
 
-pub const STACK_POINTER_REGISTER: u32 = 13;
-pub const LINK_REGISTER_REGISTER: u32 = 14;
-pub const PROGRAM_COUNTER_REGISTER: u32 = 15;
+// Special registers
+pub const STACK_POINTER_REGISTER: usize = 13;
+pub const LINK_REGISTER_REGISTER: usize = 14;
+pub const PROGRAM_COUNTER_REGISTER: usize = 15;
+
+// CPU Addressing Modes
+pub const USER_MODE: u8 = 0x10;
+pub const FIQ_MODE: u8 = 0x11;
+pub const IRQ_MODE: u8 = 0x12;
+pub const SUPERVISOR_MODE: u8 = 0x13;
+pub const ABORT_MODE: u8 = 0x17;
+pub const UNDEFINED_MODE: u8 = 0x1b;
+pub const SYSTEM_MODE: u8 = 0x1f;
 
 pub struct CPU {
 	// General Purpose Registers

@@ -11,42 +11,44 @@ impl MemoryBus {
 		}
 	}
 
-	pub fn get8(&self, addr: u32) -> u8 {
-		self.memory[addr as usize]
+	pub fn read_8(&self, address: u32) -> u8 {
+		self.memory[address as usize]
 	}
 
-	pub fn set8(&mut self, addr: u32, value: u8) {
-		self.memory[addr as usize] = value;
+	pub fn write_8(&mut self, address: u32, value: u8) {
+		self.memory[address as usize] = value;
 	}
 
-	pub fn get16(&self, addr: u32) -> u16 {
+	pub fn read_16(&self, address: u32) -> u16 {
 		unsafe {
-			self.memory.as_ptr().offset(addr as isize) as u16
+			*(self.memory.as_ptr().offset(address as isize) as *mut u16) as u16
 		}
 	}
 
-	pub fn set16(&mut self, addr: u32, value: u16) {
+	pub fn write_16(&mut self, address: u32, value: u16) {
 		unsafe {
-			*(self.memory.as_mut_ptr().offset(addr as isize) as *mut u16) = value;
+			*(self.memory.as_mut_ptr().offset(address as isize) as *mut u16) = value;
 		}
 	}
 
-	pub fn get32(&self, addr: u32) -> u32 {
+	pub fn read_32(&self, address: u32) -> u32 {
 		unsafe {
-			self.memory.as_ptr().offset(addr as isize) as u32
+			*(self.memory.as_ptr().offset(address as isize) as *mut u32) as u32
 		}
 	}
 
-	pub fn set32(&mut self, addr: u32, value: u32) {
+	pub fn write_32(&mut self, address: u32, value: u32) {
 		unsafe {
-			*(self.memory.as_mut_ptr().offset(addr as isize) as *mut u32) = value;
+			*(self.memory.as_mut_ptr().offset(address as isize) as *mut u32) = value;
 		}
 	}
 
+	/// Load BIOS ROM into memory
 	pub fn load_bios(&mut self, bios: &[u8]) {
 		self.memory[0..=0x0000_3FFF].copy_from_slice(bios);
 	}
 
+	/// Load Cartridge ROM into memory
 	pub fn load_cartridge(&mut self, rom: &[u8]) {
 		// Mirrored twice in hardware
 		self.memory[0x0800_0000..0x0800_0000 + rom.len()].copy_from_slice(rom);
