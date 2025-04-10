@@ -7,14 +7,12 @@
             "request": "launch",
             "program": "${workspaceFolder}/target/debug/gba_rustmulator.exe",
             "args": [],
-            "stopAtEntry": false,
             "cwd": "${workspaceFolder}",
             "environment": [{
 				"name": "RUST_BACKTRACE",
 				"value": "1"
 			}],
-			"externalConsole": false,
-			"preLaunchTask": "cargo build"
+			"preLaunchTask": "cargo build",
 		},
 		{
             "name": "(Windows) Launch Release",
@@ -22,10 +20,8 @@
             "request": "launch",
             "program": "${workspaceFolder}/target/release/gba_rustmulator.exe",
             "args": [],
-            "stopAtEntry": false,
             "cwd": "${workspaceFolder}",
             "environment": [],
-			"externalConsole": false,
 			"preLaunchTask": "cargo build release"
         },
         {

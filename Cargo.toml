@@ -18,6 +18,7 @@
     num-derive = "0.2"
 
 [profile.dev]
+    debuginfo = 2
 	opt-level = 0
 	
 [profile.release]
@@ -25,4 +26,4 @@
 	opt-level = 3
 
 [profile.dev.package."*"]
-	opt-level = 3
+	opt-level = 1

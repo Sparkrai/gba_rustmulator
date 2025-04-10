@@ -2,10 +2,11 @@ use bitvec::order::Lsb0;
 use bitvec::prelude::BitView;
 use num_traits::{FromPrimitive, PrimInt};
 
-use crate::arm7tdmi::cpu::{CPU, LINK_REGISTER_REGISTER, PROGRAM_COUNTER_REGISTER, STACK_POINTER_REGISTER};
+use crate::arm7tdmi::cpu::{CPU, LINK_REGISTER_REGISTER, PROGRAM_COUNTER_REGISTER};
 use crate::arm7tdmi::{cond_passed, EShiftType};
 use crate::arm7tdmi::{sign_extend, EOperatingMode};
 use crate::memory::MemoryBus;
+use core::num::bignum::FullOps;
 
 pub fn operate_arm(cpu: &mut CPU, bus: &mut MemoryBus, instruction: u32) {
 	let cond = (instruction >> (32 - 4)) as u8;
@@ -28,6 +29,132 @@ pub fn operate_arm(cpu: &mut CPU, bus: &mut MemoryBus, instruction: u32) {
 				(cpu.get_register_value(PROGRAM_COUNTER_REGISTER) as i32).wrapping_add(offset << 2) as u32,
 			);
 			return;
+		} else if (0xe000_0010 & instruction) == 0x0600_0010 {
+			// Undefined instruction
+			cpu.get_mut_spsr(EOperatingMode::UndefinedMode).set_value(cpu.get_cpsr().get_value());
+
+			cpu.set_operating_mode(EOperatingMode::UndefinedMode);
+			cpu.get_cpsr().set_t(false);
+			cpu.get_cpsr().set_i(true);
+
+			cpu.set_register_value(PROGRAM_COUNTER_REGISTER, 0x4);
+		} else if (0x0fb0_0ff0 & instruction) == 0x0100_0090 {
+			// SWP/SWPB
+			let b = (1 << 22 & instruction) != 0;
+
+			let rn = cpu.get_register_value(((instruction & 0x000f_0000) >> 16) as u8);
+			let rm = cpu.get_register_value((instruction & 0x0000_000f) as u8);
+			let rd_index = ((instruction & 0x0000_f000) >> 12) as u8;
+
+			if b {
+				let temp = bus.read_8(rn);
+				bus.write_8(rn, rm as u8);
+				cpu.set_register_value(rd_index, temp as u32);
+			} else {
+				let temp;
+				if (address & 0x0000_0003) == 0 {
+					temp = bus.read_32(rn);
+				} else {
+					// NOTE: Forced alignment and rotation of data! (UNPREDICTABLE)
+					temp = bus.read_32(rn & !0x0000_0003).rotate_right((rn & 0x0000_0003) * 8);
+				}
+
+				// NOTE: Forced alignment! (UNPREDICTABLE)
+				bus.write_32(rn & !0x0000_0003, rm);
+				cpu.set_register_value(rd_index, temp);
+			}
+		} else if (0x0f00_00f0 & instruction) == 0x0000_0090 {
+			let s = (0x0010_0000 & instruction) != 0;
+			let rn = cpu.get_register_value(((instruction & 0x0000_f000) >> 12) as u8);
+			let rn = cpu.get_register_value(((instruction & 0x0000_0f00) >> 8) as u8);
+			let rm = cpu.get_register_value((instruction & 0x0000_000f) as u8);
+			let rd_index = ((instruction & 0x000f_0000) >> 16) as u8;
+
+			match (0x01e0_0000 & instruction) >> 21 {
+				// MUL
+				0x0 => {
+					let alu_out = rm * rs;
+					cpu.set_register_value(rd_index, alu_out);
+
+					if s {
+						cpu.get_mut_cpsr().set_n((alu_out & 0x8000_0000) != 0);
+						cpu.get_mut_cpsr().set_z(alu_out == 0);
+						cpu.get_mut_cpsr().set_c(false);
+					}
+				}
+				// MLA
+				0x1 => {
+					let alu_out = rm.wrapping_mul(rs).wrapping_add(rn);
+					cpu.set_register_value(rd_index, alu_out);
+
+					if s {
+						cpu.get_mut_cpsr().set_n((alu_out & 0x8000_0000) != 0);
+						cpu.get_mut_cpsr().set_z(alu_out == 0);
+						cpu.get_mut_cpsr().set_c(false);
+					}
+				}
+				// UMULL
+				0x4 => {
+					let alu_out = (rm as u64).wrapping_mul(rs as u64);
+					cpu.set_register_value(rd_index, (alu_out >> 32) as u32);
+					cpu.set_register_value(rn_index, alu_out as u32);
+
+					if s {
+						cpu.get_mut_cpsr().set_n((alu_out & 0x8000_0000_0000_0000) != 0);
+						cpu.get_mut_cpsr().set_z(alu_out == 0);
+						cpu.get_mut_cpsr().set_c(false);
+						cpu.get_mut_cpsr().set_v(false);
+					}
+				}
+				// UMLAL
+				0x5 => {
+					let alu_out = (rm as u64).wrapping_mul(rs as u64);
+					let (lo, carry) = (alu_out as u32).overflowing_add(rn);
+					cpu.set_register_value(rn_index, lo);
+
+					let rd = cpu.get_register_value(rd_index);
+					let hi = (alu_out >> 32) as u32 + rd + carry as u32;
+					cpu.set_register_value(rd_index, hi);
+
+					if s {
+						cpu.get_mut_cpsr().set_n((hi & 0x8000_0000) != 0);
+						cpu.get_mut_cpsr().set_z(hi == 0 && lo == 0);
+						cpu.get_mut_cpsr().set_c(false);
+						cpu.get_mut_cpsr().set_v(false);
+					}
+				}
+				// SMULL
+				0x6 => {
+					let alu_out = (rm as i64).wrapping_mul(rs as i64);
+					cpu.set_register_value(rd_index, (alu_out >> 32) as u32);
+					cpu.set_register_value(rn_index, alu_out as u32);
+
+					if s {
+						cpu.get_mut_cpsr().set_n((alu_out & 0x8000_0000_0000_0000) != 0);
+						cpu.get_mut_cpsr().set_z(alu_out == 0);
+						cpu.get_mut_cpsr().set_c(false);
+						cpu.get_mut_cpsr().set_v(false);
+					}
+				}
+				// SMLAL
+				0x7 => {
+					let alu_out = (rm as i64).wrapping_mul(rs as i64);
+					let (lo, carry) = (alu_out as u32).overflowing_add(rn);
+					cpu.set_register_value(rn_index, lo);
+
+					let rd = cpu.get_register_value(rd_index);
+					let hi = (alu_out >> 32) as u32 + rd + carry as u32;
+					cpu.set_register_value(rd_index, hi);
+
+					if s {
+						cpu.get_mut_cpsr().set_n((hi & 0x8000_0000) != 0);
+						cpu.get_mut_cpsr().set_z(hi == 0 && lo == 0);
+						cpu.get_mut_cpsr().set_c(false);
+						cpu.get_mut_cpsr().set_v(false);
+					}
+				}
+				_ => panic!("ERROR!!!"),
+			}
 		} else if (0x0fbf_0fff & instruction) == 0x010f_0000 {
 			// MRS (PSR Transfer)
 			let r = (0x0040_0000 & instruction) > 0;
@@ -87,7 +214,7 @@ pub fn operate_arm(cpu: &mut CPU, bus: &mut MemoryBus, instruction: u32) {
 
 			psr.set_value((psr.get_value() & !mask) | (operand & mask));
 		} else if (0x0c00_0000 & instruction) == 0x0400_0000 {
-			// Single Data Transfer
+			// LDR/STR Single Data Transfer
 			let i = (0x0200_0000 & instruction) > 0;
 			let p = (0x0100_0000 & instruction) > 0;
 			let u = (0x0080_0000 & instruction) > 0;
@@ -145,9 +272,9 @@ pub fn operate_arm(cpu: &mut CPU, bus: &mut MemoryBus, instruction: u32) {
 
 			let address = if p {
 				if u {
-					rn + offset
+					rn.wrapping_add(offset)
 				} else {
-					rn - offset
+					rn.wrapping_sub(offset)
 				}
 			} else {
 				rn
@@ -161,9 +288,23 @@ pub fn operate_arm(cpu: &mut CPU, bus: &mut MemoryBus, instruction: u32) {
 				}
 			} else {
 				if l {
-					cpu.set_register_value(rd_index, bus.read_32(address) as u32);
+					let data;
+					if (address & 0x0000_0003) == 0 {
+						data = bus.read_32(address);
+					} else {
+						// NOTE: Forced alignment and rotation of data! (UNPREDICTABLE)
+						data = bus.read_32(address & !0x0000_0003).rotate_right((address & 0x0000_0003) * 8);
+					}
+
+					if rd_index == PROGRAM_COUNTER_REGISTER {
+						cpu.set_register_value(rd_index, data & !0x3);
+					} else {
+						cpu.set_register_value(rd_index, data);
+					}
 				} else {
-					bus.write_32(address, cpu.get_register_value(rd_index));
+					let rd = cpu.get_register_value(rd_index);
+					// NOTE: Forced alignment! (UNPREDICTABLE)
+					bus.write_32(address & !0x0000_0003, rd);
 				}
 			}
 
@@ -179,7 +320,31 @@ pub fn operate_arm(cpu: &mut CPU, bus: &mut MemoryBus, instruction: u32) {
 				let new_address = if u { rn.wrapping_add(offset) } else { rn.wrapping_sub(offset) };
 				cpu.set_register_value(rn_index, new_address);
 			}
+		} else if (0x0e00_0090 & instruction) == 0x0000_0090 {
+			//LDRSHD/STRSHD Halfword, Doubleword, Signed Data Transfer
+			let p = (0x0100_0000 & instruction) != 0;
+			let u = (0x0080_0000 & instruction) != 0;
+			let i = (0x0040_0000 & instruction) != 0;
+			let w = (0x0020_0000 & instruction) != 0;
+			let l = (0x0010_0000 & instruction) != 0;
+
+			let rn_index = ((instruction & 0x000f_0000) >> 16) as u8;
+			let rn = cpu.get_register_value(rn_index);
+			let rd_index = ((instruction & 0x0000_f000) >> 12) as u8;
+			let offset = instruction & 0x0000_000f;
+
+			let op;
+			if (0x0000_0020 & instruction) > 0 {
+				op = "H"
+			} else if (0x0000_0030 & instruction) > 0 {
+				op = "SB"
+			} else if (0x0000_0040 & instruction) > 0 {
+				op = "SH"
+			} else {
+				panic!("ERROR!!!");
+			}
 		} else if (0x0e00_0000 & instruction) == 0x0800_0000 {
+			// LDM/STM Load/Store multiple registers
 			let l = (0x0010_0000 & instruction) != 0;
 			let w = (0x0020_0000 & instruction) != 0;
 			let s = (0x0040_0000 & instruction) != 0;
@@ -257,8 +422,6 @@ pub fn operate_arm(cpu: &mut CPU, bus: &mut MemoryBus, instruction: u32) {
 					address = address.wrapping_add(4);
 				}
 				debug_assert_eq!(end_address, address.wrapping_sub(4));
-
-				cpu.set_register_value(STACK_POINTER_REGISTER, end_address);
 			} else {
 				let mut address = start_address;
 				let mut first = true;

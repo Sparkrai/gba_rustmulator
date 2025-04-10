@@ -8,12 +8,14 @@ use crate::memory::MemoryBus;
 mod disassembling;
 
 pub fn build_memory_debug_window(
-	cpu: &mut CPU,
-	bus: &mut MemoryBus,
+	cpu: &CPU,
+	bus: &MemoryBus,
 	show_memory_window: &mut bool,
 	address: &mut u32,
 	debug_mode: &mut bool,
+	execute_step: &mut bool,
 	breakpoint_set: &mut bool,
+	breakpoint_address: &mut u32,
 	ui: &&mut Ui,
 ) {
 	Window::new(im_str!("Current Memory"))
@@ -35,30 +37,30 @@ pub fn build_memory_debug_window(
 
 			ui.text("Current instruction highlighted");
 
-			if ui.button(im_str!("Step"), [0.0, 0.0]) || ui.is_key_down(Key::DownArrow) {
-				decode(cpu, bus);
-				if !*breakpoint_set {
-					*address = cpu.get_current_pc();
-				}
+			if ui.button(im_str!("Step"), [0.0, 0.0]) || ui.is_key_down(Key::DownArrow) && *debug_mode {
+				*execute_step = true;
+				*address = cpu.get_current_pc();
 			}
 			ui.same_line(0.0);
 			ui.checkbox(im_str!("Debug"), debug_mode);
 
-			let mut new_address = (*address) as i32;
+			let mut new_address = if *breakpoint_set { *breakpoint_address } else { *address } as i32;
 			if ui.button(im_str!("Current PC"), [0.0, 0.0]) {
-				if !*breakpoint_set {
-					*address = cpu.get_current_pc();
-				}
+				*address = cpu.get_current_pc();
 			}
 
 			ui.same_line(0.0);
-			if ui.input_int(im_str!("Address"), &mut new_address).step(4).chars_hexadecimal(true).build() {
-				*address = new_address as u32;
+			if ui.input_int(im_str!("Address"), &mut new_address).step(4).chars_hexadecimal(true).build() && *debug_mode {
+				if *breakpoint_set {
+					*breakpoint_address = new_address as u32;
+				} else {
+					*address = new_address as u32;
+				}
 			}
 
-			if ui.button(im_str!("Set/Unset Breakpoint"), [0.0, 0.0]) {
+			if ui.button(im_str!("Set/Unset Breakpoint"), [0.0, 0.0]) && *debug_mode {
 				*breakpoint_set = !*breakpoint_set;
-				*address = new_address as u32;
+				*breakpoint_address = new_address as u32;
 			}
 
 			ui.separator();
@@ -66,39 +68,41 @@ pub fn build_memory_debug_window(
 				ui.columns(3, im_str!("memory"), true);
 				ui.set_column_width(0, 95.0);
 
-				const ENTRIES: i32 = 300;
-				let starting_address = (if *breakpoint_set { cpu.get_current_pc() } else { *address }).saturating_sub(20);
+				const ENTRIES: i32 = 20;
+				let starting_address = (if *breakpoint_set { cpu.get_current_pc() } else { *address }).saturating_sub((pc_offset / 2) * (ENTRIES / 2) as u32);
 				let mut list_clipper = ListClipper::new(ENTRIES).begin(&ui);
 				while list_clipper.step() {
 					for row in list_clipper.display_start()..list_clipper.display_end() {
-						let address = starting_address + (row as u32 * (pc_offset / 2));
+						let address = starting_address.saturating_add((row as u32 * (pc_offset / 2)));
+						if address <= u32::max_value() - (pc_offset / 2) {
+							Selectable::new(&*im_str!("{:#010X}:", address))
+								.selected(address == cpu.get_current_pc())
+								.span_all_columns(true)
+								.build(&ui);
+							ui.next_column();
 
-						Selectable::new(&*im_str!("{:#010X}:", address))
-							.selected(address == cpu.get_current_pc())
-							.span_all_columns(true)
-							.build(&ui);
-						ui.next_column();
-
-						for j in 0..pc_offset / 2 {
-							let value = bus.read_8(address as u32 + j);
-							let color = if value == 0 { [0.5, 0.5, 0.5, 0.5] } else { [1.0, 1.0, 1.0, 1.0] };
-							ui.text_colored(color, format!("{:02X}", value));
-							if j != 3 {
-								ui.same_line(0.0);
+							for j in 0..pc_offset / 2 {
+								let value = bus.read_8(address as u32 + j);
+								let color = if value == 0 { [0.5, 0.5, 0.5, 0.5] } else { [1.0, 1.0, 1.0, 1.0] };
+								ui.text_colored(color, format!("{:02X}", value));
+								if j != 3 {
+									ui.same_line(0.0);
+								}
 							}
-						}
 
-						ui.next_column();
-						ui.text(if cpu.get_cpsr().get_t() {
-							disassemble_thumb(bus.read_16(address as u32))
-						} else {
-							disassemble_arm(bus.read_32(address as u32))
-						});
-						ui.next_column();
-						ui.separator();
+							ui.next_column();
+							ui.text(if cpu.get_cpsr().get_t() {
+								disassemble_thumb(bus.read_16(address as u32))
+							} else {
+								disassemble_arm(bus.read_32(address as u32))
+							});
+							ui.next_column();
+							ui.separator();
+						}
 					}
 				}
 				ui.columns(1, im_str!(""), false);
+
 				scroll_token.end(&ui);
 			}
 		});
@@ -109,7 +113,7 @@ pub fn build_cpu_debug_window(cpu: &CPU, ui: &&mut Ui, opened: &mut bool) {
 		ui.text(im_str!("Mode: {:?}", cpu.get_operating_mode()));
 
 		if CollapsingHeader::new(im_str!("GPRs")).default_open(true).build(&ui) {
-			ui.columns(2, im_str!("User Registers"), true);
+			ui.columns(2, im_str!("Registers"), true);
 			for (i, register) in cpu.get_registers().iter().enumerate() {
 				ui.text(format!("r{}:", i));
 				ui.next_column();

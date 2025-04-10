@@ -603,13 +603,13 @@ pub fn operate_thumb(instruction: u16, cpu: &mut CPU, bus: &mut MemoryBus) {
 		// PUSH/POP
 		let pop = (0x0800 & instruction) != 0;
 		let r = (0x0100 & instruction) != 0;
-		let sp = cpu.get_register_value(STACK_POINTER_REGISTER);
+		let sp = cpu.get_register_value(STACK_POINTER_REGISTER) & !0x3;
 		let reg_list = (0x00ff & instruction).view_bits::<Lsb0>().to_bitvec().into_boxed_bitslice();
 
 		if pop {
 			// NOTE: Forced alignment!
 			let start_address = sp;
-			let end_address = sp.wrapping_add(4 * (r as u32 + reg_list.count_ones() as u32)) & !0x3;
+			let end_address = sp.wrapping_add(4 * (r as u32 + reg_list.count_ones() as u32));
 			let mut address = start_address;
 
 			for i in 0..8 {
@@ -624,7 +624,7 @@ pub fn operate_thumb(instruction: u16, cpu: &mut CPU, bus: &mut MemoryBus) {
 				cpu.set_register_value(PROGRAM_COUNTER_REGISTER, value);
 				address = address.wrapping_add(4);
 			}
-			debug_assert_eq!(end_address, address.wrapping_sub(4));
+			debug_assert_eq!(end_address, address);
 
 			cpu.set_register_value(STACK_POINTER_REGISTER, end_address);
 		} else {
@@ -684,5 +684,5 @@ pub fn operate_thumb(instruction: u16, cpu: &mut CPU, bus: &mut MemoryBus) {
 		}
 	}
 
-	cpu.set_register_value(PROGRAM_COUNTER_REGISTER, cpu.get_current_pc() + 2);
+	cpu.set_register_value(PROGRAM_COUNTER_REGISTER, cpu.get_current_pc().wrapping_add(2));
 }
