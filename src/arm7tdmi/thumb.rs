@@ -1,8 +1,7 @@
-use bitvec::order::Lsb0;
-use bitvec::prelude::BitView;
+use bitvec::prelude::*;
 use num_traits::PrimInt;
 
-use crate::arm7tdmi::cpu::{CPU, PROGRAM_COUNTER_REGISTER, STACK_POINTER_REGISTER};
+use crate::arm7tdmi::cpu::{CPU, LINK_REGISTER_REGISTER, PROGRAM_COUNTER_REGISTER, STACK_POINTER_REGISTER};
 use crate::arm7tdmi::{cond_passed, sign_extend, EShiftType};
 use crate::memory::MemoryBus;
 
@@ -402,10 +401,11 @@ pub fn operate_thumb(instruction: u16, cpu: &mut CPU, bus: &mut MemoryBus) {
 		// NOTE: Enforce alignment
 		let address = if cpu.get_cpsr().get_t() { rm & !0x1 } else { rm & !0x3 };
 		cpu.set_register_value(PROGRAM_COUNTER_REGISTER, address);
+		return;
 	} else if (0xfc00 & instruction) == 0x4400 {
 		// Hi register ALUs
 		let rm = cpu.get_register_value(((instruction & 0x0078) >> 3) as u8);
-		let rd_index = ((instruction & 0x0007) & ((instruction & 0x0080) >> 4)) as u8;
+		let rd_index = ((instruction & 0x0007) | ((instruction & 0x0080) >> 4)) as u8;
 		let rd = cpu.get_register_value(rd_index);
 		match (0x0300 & instruction) >> 8 {
 			// ADD
@@ -589,11 +589,57 @@ pub fn operate_thumb(instruction: u16, cpu: &mut CPU, bus: &mut MemoryBus) {
 			// NOTE: Forced alignment! (UNPREDICTABLE)
 			bus.write_32(address & !0x0000_0003, rd);
 		}
+	} else if (0xf600 & instruction) == 0xb400 {
+		let pop = (0x0800 & instruction) != 0;
+		let r = (0x0100 & instruction) != 0;
+		let sp = cpu.get_register_value(STACK_POINTER_REGISTER);
+		let reg_list = (0x00ff & instruction).view_bits::<Lsb0>().to_bitvec().into_boxed_bitslice();
+
+		if pop {
+			// NOTE: Forced alignment!
+			let start_address = sp;
+			let end_address = sp.wrapping_add(4 * (r as u32 + reg_list.count_ones() as u32)) & !0x3;
+			let mut address = start_address;
+
+			for i in 0..8 {
+				if reg_list[i] {
+					cpu.set_register_value(i as u8, bus.read_32(address));
+					address += 4;
+				}
+			}
+
+			if r {
+				let value = bus.read_32(address) & !0x1;
+				cpu.set_register_value(PROGRAM_COUNTER_REGISTER, value);
+				address += 4;
+			}
+			debug_assert_eq!(end_address, address);
+
+			cpu.set_register_value(STACK_POINTER_REGISTER, end_address);
+		} else {
+			// NOTE: Forced alignment!
+			let start_address = sp.wrapping_sub(4 * (r as u32 + reg_list.count_ones() as u32)) & !0x3;
+			let end_address = sp.wrapping_sub(4);
+			let mut address = start_address;
+			for i in 0..8 {
+				if reg_list[i] {
+					bus.write_32(address, cpu.get_register_value(i as u8));
+					address += 4;
+				}
+			}
+
+			if r {
+				bus.write_32(address, cpu.get_register_value(LINK_REGISTER_REGISTER));
+			}
+			debug_assert_eq!(end_address, address);
+
+			cpu.set_register_value(STACK_POINTER_REGISTER, start_address);
+		}
 	} else if (0xf000 & instruction) == 0xd000 {
 		// Conditional Branch
 		let cond = ((0x0f00 & instruction) >> 8) as u8;
 		if cond_passed(cpu, cond) {
-			let offset = sign_extend((instruction & 0x00ff), 8) << 1;
+			let offset = sign_extend(instruction & 0x00ff, 8) << 1;
 
 			cpu.set_register_value(
 				PROGRAM_COUNTER_REGISTER,
@@ -603,7 +649,7 @@ pub fn operate_thumb(instruction: u16, cpu: &mut CPU, bus: &mut MemoryBus) {
 		}
 	} else if (0xf800 & instruction) == 0xe000 {
 		// Unconditional Branch
-		let offset = sign_extend((instruction & 0x07ff), 10) << 1;
+		let offset = sign_extend(instruction & 0x07ff, 10) << 1;
 		cpu.set_register_value(
 			PROGRAM_COUNTER_REGISTER,
 			(cpu.get_register_value(PROGRAM_COUNTER_REGISTER) as i32).wrapping_add(offset) as u32,

@@ -19,13 +19,13 @@ pub fn operate_arm(cpu: &mut CPU, bus: &mut MemoryBus, instruction: u32) {
 			// Branch
 			if 0x0100_0000 & instruction > 0 {
 				// Branch with Link
-				cpu.set_register_value(LINK_REGISTER_REGISTER, cpu.get_register_value(PROGRAM_COUNTER_REGISTER) + 4);
+				cpu.set_register_value(LINK_REGISTER_REGISTER, cpu.get_current_pc() + 4);
 			}
 
 			let offset = sign_extend(0x00ff_ffff & instruction, 24);
 			cpu.set_register_value(
 				PROGRAM_COUNTER_REGISTER,
-				(cpu.get_register_value(PROGRAM_COUNTER_REGISTER) as i32).wrapping_add((offset << 2)) as u32,
+				(cpu.get_register_value(PROGRAM_COUNTER_REGISTER) as i32).wrapping_add(offset << 2) as u32,
 			);
 			return;
 		} else if (0x0fbf_0fff & instruction) == 0x010f_0000 {
