@@ -1,13 +1,13 @@
 pub const MEMORY_SIZE: usize = u32::max_value() as usize;
 
 pub struct MemoryBus {
-	memory: Vec<u8>,
+	memory: Box<[u8]>,
 }
 
 impl MemoryBus {
 	pub fn new() -> Self {
 		Self {
-			memory: vec![0; MEMORY_SIZE],
+			memory: vec![0; MEMORY_SIZE].into_boxed_slice(),
 		}
 	}
 
