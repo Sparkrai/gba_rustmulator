@@ -2,6 +2,7 @@ mod io;
 
 use crate::ppu::{PPU, PPU_REGISTERS_END};
 use crate::system::io::{IORegisters, IO_REGISTERS_END};
+use num_traits::{PrimInt, Unsigned};
 
 // Sizes
 pub const EWRAM_SIZE: usize = 256 * 1024;
@@ -34,6 +35,12 @@ pub trait MemoryInterface {
 	fn write_16(&mut self, address: u32, value: u16);
 	fn read_32(&self, address: u32) -> u32;
 	fn write_32(&mut self, address: u32, value: u32);
+}
+
+/// Provides read/write access to I/O Registers
+pub trait IORegister<T: PrimInt + Unsigned> {
+	fn read(&self) -> T;
+	fn write(&mut self, value: T);
 }
 
 /// The system bus

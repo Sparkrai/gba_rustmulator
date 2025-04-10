@@ -5,7 +5,7 @@ use num_derive::*;
 use num_traits::FromPrimitive;
 
 use crate::arm7tdmi::{sign_extend, Gba16BitRegister, Gba32BitRegister, Gba8BitSlice};
-use crate::system::MemoryInterface;
+use crate::system::{IORegister, MemoryInterface};
 use crate::system::{OAM_ADDR, PALETTE_RAM_ADDR, VRAM_ADDR};
 
 pub const PPU_REGISTERS_END: u32 = 0x56;
@@ -17,43 +17,43 @@ pub const PALETTE_RAM_SIZE: usize = 1 * 1024;
 pub const VRAM_SIZE: usize = 96 * 1024;
 pub const OAM_SIZE: usize = 1 * 1024;
 
-pub const DISP_CNT_RANGE: Range<usize> = 0x0..0x2;
-pub const DISP_STAT_RANGE: Range<usize> = 0x4..0x6;
-pub const VCOUNT_RANGE: Range<usize> = 0x6..0x8;
-pub const BG0_CNT_RANGE: Range<usize> = 0x8..0xa;
-pub const BG1_CNT_RANGE: Range<usize> = 0xa..0xc;
-pub const BG2_CNT_RANGE: Range<usize> = 0xc..0xe;
-pub const BG3_CNT_RANGE: Range<usize> = 0xe..0x10;
-pub const BG0_HOFS_RANGE: Range<usize> = 0x10..0x12;
-pub const BG0_VOFS_RANGE: Range<usize> = 0x12..0x14;
-pub const BG1_HOFS_RANGE: Range<usize> = 0x14..0x16;
-pub const BG1_VOFS_RANGE: Range<usize> = 0x16..0x18;
-pub const BG2_HOFS_RANGE: Range<usize> = 0x18..0x1a;
-pub const BG2_VOFS_RANGE: Range<usize> = 0x1a..0x1c;
-pub const BG3_HOFS_RANGE: Range<usize> = 0x1c..0x1e;
-pub const BG3_VOFS_RANGE: Range<usize> = 0x1e..0x20;
-pub const BG2_PA_RANGE: Range<usize> = 0x20..0x22;
-pub const BG2_PB_RANGE: Range<usize> = 0x22..0x24;
-pub const BG2_PC_RANGE: Range<usize> = 0x24..0x26;
-pub const BG2_PD_RANGE: Range<usize> = 0x26..0x28;
-pub const BG2_X_RANGE: Range<usize> = 0x28..0x2c;
-pub const BG2_Y_RANGE: Range<usize> = 0x2c..0x30;
-pub const BG3_PA_RANGE: Range<usize> = 0x30..0x32;
-pub const BG3_PB_RANGE: Range<usize> = 0x32..0x34;
-pub const BG3_PC_RANGE: Range<usize> = 0x34..0x36;
-pub const BG3_PD_RANGE: Range<usize> = 0x36..0x38;
-pub const BG3_X_RANGE: Range<usize> = 0x38..0x3c;
-pub const BG3_Y_RANGE: Range<usize> = 0x3c..0x40;
-pub const WIN0_H_RANGE: Range<usize> = 0x40..0x42;
-pub const WIN1_H_RANGE: Range<usize> = 0x42..0x44;
-pub const WIN0_V_RANGE: Range<usize> = 0x44..0x46;
-pub const WIN1_V_RANGE: Range<usize> = 0x46..0x48;
-pub const WIN_IN_RANGE: Range<usize> = 0x48..0x4a;
-pub const WIN_OUT_RANGE: Range<usize> = 0x4a..0x4c;
-pub const MOSAIC_RANGE: Range<usize> = 0x4c..0x50;
-pub const BLD_CNT_RANGE: Range<usize> = 0x50..0x52;
-pub const BLD_ALPHA_RANGE: Range<usize> = 0x52..0x54;
-pub const BLD_Y_RANGE: Range<usize> = 0x54..0x56;
+pub const DISP_CNT_ADDRESS: u32 = 0x0;
+pub const DISP_STAT_ADDRESS: u32 = 0x4;
+pub const VCOUNT_ADDRESS: u32 = 0x6;
+pub const BG0_CNT_ADDRESS: u32 = 0x8;
+pub const BG1_CNT_ADDRESS: u32 = 0xa;
+pub const BG2_CNT_ADDRESS: u32 = 0xc;
+pub const BG3_CNT_ADDRESS: u32 = 0xe;
+pub const BG0_HOFS_ADDRESS: u32 = 0x10;
+pub const BG0_VOFS_ADDRESS: u32 = 0x12;
+pub const BG1_HOFS_ADDRESS: u32 = 0x14;
+pub const BG1_VOFS_ADDRESS: u32 = 0x16;
+pub const BG2_HOFS_ADDRESS: u32 = 0x18;
+pub const BG2_VOFS_ADDRESS: u32 = 0x1a;
+pub const BG3_HOFS_ADDRESS: u32 = 0x1c;
+pub const BG3_VOFS_ADDRESS: u32 = 0x1e;
+pub const BG2_PA_ADDRESS: u32 = 0x20;
+pub const BG2_PB_ADDRESS: u32 = 0x22;
+pub const BG2_PC_ADDRESS: u32 = 0x24;
+pub const BG2_PD_ADDRESS: u32 = 0x26;
+pub const BG2_X_ADDRESS: u32 = 0x28;
+pub const BG2_Y_ADDRESS: u32 = 0x2c;
+pub const BG3_PA_ADDRESS: u32 = 0x30;
+pub const BG3_PB_ADDRESS: u32 = 0x32;
+pub const BG3_PC_ADDRESS: u32 = 0x34;
+pub const BG3_PD_ADDRESS: u32 = 0x36;
+pub const BG3_X_ADDRESS: u32 = 0x38;
+pub const BG3_Y_ADDRESS: u32 = 0x3c;
+pub const WIN0_H_ADDRESS: u32 = 0x40;
+pub const WIN1_H_ADDRESS: u32 = 0x42;
+pub const WIN0_V_ADDRESS: u32 = 0x44;
+pub const WIN1_V_ADDRESS: u32 = 0x46;
+pub const WIN_IN_ADDRESS: u32 = 0x48;
+pub const WIN_OUT_ADDRESS: u32 = 0x4a;
+pub const MOSAIC_ADDRESS: u32 = 0x4c;
+pub const BLD_CNT_ADDRESS: u32 = 0x50;
+pub const BLD_ALPHA_ADDRESS: u32 = 0x52;
+pub const BLD_Y_ADDRESS: u32 = 0x54;
 
 #[derive(Debug, Copy, Clone, FromPrimitive, ToPrimitive, PartialEq)]
 pub enum EVideoMode {
@@ -120,20 +120,32 @@ impl Color {
 }
 
 pub struct WindowDimensions {
-	x: u8,
-	x2: u8,
-	y: u8,
-	y2: u8,
+	h: Gba16BitRegister,
+	v: Gba16BitRegister,
 }
 
 impl WindowDimensions {
-	pub fn new(h: &Gba8BitSlice, v: &Gba8BitSlice) -> Self {
+	pub fn new() -> Self {
 		Self {
-			x: h[8..16].load_le::<u8>(),
-			x2: h[0..8].load_le::<u8>() - 1,
-			y: v[8..16].load_le::<u8>(),
-			y2: v[0..8].load_le::<u8>() - 1,
+			h: Gba16BitRegister::zeroed(),
+			v: Gba16BitRegister::zeroed(),
 		}
+	}
+
+	pub fn get_x1(&self) -> u8 {
+		self.h[8..16].load_le::<u8>()
+	}
+
+	pub fn get_x2(&self) -> u8 {
+		self.h[0..8].load_le::<u8>()
+	}
+
+	pub fn get_y1(&self) -> u8 {
+		self.h[8..16].load_le::<u8>()
+	}
+
+	pub fn get_y2(&self) -> u8 {
+		self.h[0..8].load_le::<u8>()
 	}
 }
 
@@ -225,44 +237,20 @@ impl<'a> SpriteEntry<'a> {
 
 pub struct PPU {
 	// Registers
-	registers: Box<[u8]>,
 	disp_cnt: DisplayControl,
 	// green_swap: Gba16BitRegister, // Undocumented - Green Swap
 	disp_stat: DisplayStatus,
-	vcount: u8,
-	bg0_cnt: BackgroundControl,
-	bg1_cnt: Gba16BitRegister,
-	bg2_cnt: Gba16BitRegister,
-	bg3_cnt: Gba16BitRegister,
-	bg0_hofs: Gba16BitRegister,
-	bg0_vofs: Gba16BitRegister,
-	bg1_hofs: Gba16BitRegister,
-	bg1_vofs: Gba16BitRegister,
-	bg2_hofs: Gba16BitRegister,
-	bg2_vofs: Gba16BitRegister,
-	bg3_hofs: Gba16BitRegister,
-	bg3_vofs: Gba16BitRegister,
-	bg2_pa: Gba16BitRegister,
-	bg2_pb: Gba16BitRegister,
-	bg2_pc: Gba16BitRegister,
-	bg2_pd: Gba16BitRegister,
-	bg2_x: Gba32BitRegister,
-	bg2_y: Gba32BitRegister,
-	bg3_pa: Gba16BitRegister,
-	bg3_pb: Gba16BitRegister,
-	bg3_pc: Gba16BitRegister,
-	bg3_pd: Gba16BitRegister,
-	bg3_x: Gba32BitRegister,
-	bg3_y: Gba32BitRegister,
-	win0_h: Gba16BitRegister,
-	win1_h: Gba16BitRegister,
-	win0_v: Gba16BitRegister,
-	win1_v: Gba16BitRegister,
-	win_in: Gba16BitRegister,
-	win_out: Gba16BitRegister,
-	mosaic: Gba16BitRegister,
-	bld_cnt: Gba16BitRegister,
-	bld_alpha: Gba16BitRegister,
+	v_count: u8,
+	bg_controls: [BackgroundControl; 4],
+	bg_hofs: [u16; 4],
+	bg_vofs: [u16; 4],
+	bg_affine_matrices: [BackgroundAffineMatrix; 2],
+	win_dimensions: [WindowDimensions; 2],
+	win_in: WinIn,
+	win_out: WinOut,
+	mosaic: Mosaic,
+	bld_cnt: BlendControl,
+	bld_alpha: BlendAlpha,
 	bld_y: Gba16BitRegister,
 
 	// Memory
@@ -274,44 +262,21 @@ pub struct PPU {
 impl PPU {
 	pub fn new() -> Self {
 		Self {
-			registers: vec![0; 0x56].into_boxed_slice(),
 			disp_cnt: DisplayControl::new(),
 			disp_stat: DisplayStatus::new(),
-			vcount: 0,
-			bg0_cnt: &registers[0x8..0xa].view_bits(),
-			bg1_cnt: &registers[0xa..0xc].view_bits(),
-			bg2_cnt: &registers[0xc..0xe].view_bits(),
-			bg3_cnt: &registers[0xe..0x10].view_bits(),
-			bg0_hofs: &registers[0x10..0x12].view_bits(),
-			bg0_vofs: &registers[0x12..0x14].view_bits(),
-			bg1_hofs: &registers[0x14..0x16].view_bits(),
-			bg1_vofs: &registers[0x16..0x18].view_bits(),
-			bg2_hofs: &registers[0x18..0x1a].view_bits(),
-			bg2_vofs: &registers[0x1a..0x1c].view_bits(),
-			bg3_hofs: &registers[0x1c..0x1e].view_bits(),
-			bg3_vofs: &registers[0x1e..0x20].view_bits(),
-			bg2_pa: &registers[0x20..0x22].view_bits(),
-			bg2_pb: &registers[0x22..0x24].view_bits(),
-			bg2_pc: &registers[0x24..0x26].view_bits(),
-			bg2_pd: &registers[0x26..0x28].view_bits(),
-			bg2_x: &registers[0x28..0x2c].view_bits(),
-			bg2_y: &registers[0x2c..0x30].view_bits(),
-			bg3_pa: &registers[0x30..0x32].view_bits(),
-			bg3_pb: &registers[0x32..0x34].view_bits(),
-			bg3_pc: &registers[0x34..0x36].view_bits(),
-			bg3_pd: &registers[0x36..0x38].view_bits(),
-			bg3_x: &registers[0x38..0x3c].view_bits(),
-			bg3_y: &registers[0x3c..0x40].view_bits(),
-			win0_h: &registers[0x40..0x42].view_bits(),
-			win1_h: &registers[0x42..0x44].view_bits(),
-			win0_v: &registers[0x44..0x46].view_bits(),
-			win1_v: &registers[0x46..0x48].view_bits(),
-			win_in: &registers[0x48..0x4a].view_bits(),
-			win_out: &registers[0x4a..0x4c].view_bits(),
-			mosaic: &registers[0x4c..0x50].view_bits(),
-			bld_cnt: &registers[0x50..0x52].view_bits(),
-			bld_alpha: &registers[0x52..0x54].view_bits(),
-			bld_y: &registers[0x54..0x56].view_bits(),
+			v_count: 0,
+			bg_controls: [BackgroundControl::new(); 4],
+			bg_hofs: [0; 4],
+			bg_vofs: [0; 4],
+			bg_affine_matrices: [BackgroundAffineMatrix::new(); 2],
+			win_dimensions: [WindowDimensions::new(); 2],
+			win_in: WinIn::new(),
+			win_out: WinOut::new(),
+			mosaic: Mosaic::new(),
+			bld_cnt: BlendControl::new(),
+			bld_alpha: BlendAlpha::new(),
+			bld_y: Gba16BitRegister::zeroed(),
+
 			palette_ram: vec![0; PALETTE_RAM_SIZE].into_boxed_slice(),
 			vram: vec![0; VRAM_SIZE].into_boxed_slice(),
 			oam: vec![0; OAM_SIZE].into_boxed_slice(),
@@ -327,144 +292,56 @@ impl PPU {
 	}
 
 	pub fn get_vcount(&self) -> u8 {
-		self.vcount
+		self.v_count
 	}
 
 	pub fn set_vcount(&mut self, value: u8) {
-		self.vcount = value
+		self.v_count = value
 	}
 
-	fn get_bg0_cnt(&self) -> BackgroundControl {
-		BackgroundControl::new(self.registers[BG0_CNT_RANGE].view_bits())
-	}
-
-	fn get_bg1_cnt(&self) -> BackgroundControl {
-		BackgroundControl::new(self.registers[BG1_CNT_RANGE].view_bits())
-	}
-
-	fn get_bg2_cnt(&self) -> BackgroundControl {
-		BackgroundControl::new(self.registers[BG2_CNT_RANGE].view_bits())
-	}
-
-	fn get_bg3_cnt(&self) -> BackgroundControl {
-		BackgroundControl::new(self.registers[BG3_CNT_RANGE].view_bits())
+	fn get_bg_cnt(&self, index: usize) -> &BackgroundControl {
+		&self.bg_controls[index]
 	}
 
 	// FIXME: Check if 8 or 9!!!
-	fn get_bg0_hofs(&self) -> u16 {
-		self.registers[BG0_HOFS_RANGE].view_bits::<Lsb0>()[0..=9].load_le()
+	fn get_bg_hofs(&self, index: usize) -> u16 {
+		self.bg_hofs[index] & 0x01ff
 	}
 
-	fn get_bg0_vofs(&self) -> u16 {
-		self.registers[BG0_VOFS_RANGE].view_bits::<Lsb0>()[0..=9].load_le()
+	fn get_bg_vofs(&self, index: usize) -> u16 {
+		self.bg_vofs[index] & 0x01ff
 	}
 
-	fn get_bg1_hofs(&self) -> u16 {
-		self.registers[BG1_HOFS_RANGE].view_bits::<Lsb0>()[0..=9].load_le()
+	fn get_bg_affine_matrix(&self, index: usize) -> &BackgroundAffineMatrix {
+		&self.bg_affine_matrices[index]
 	}
 
-	fn get_bg1_vofs(&self) -> u16 {
-		self.registers[BG1_VOFS_RANGE].view_bits::<Lsb0>()[0..=9].load_le()
+	fn get_win_dimensions(&self, index: usize) -> &WindowDimensions {
+		&self.win_dimensions[index]
 	}
 
-	fn get_bg2_hofs(&self) -> u16 {
-		self.registers[BG2_HOFS_RANGE].view_bits::<Lsb0>()[0..=9].load_le()
+	fn get_win_in(&self) -> &WinIn {
+		&self.win_in
 	}
 
-	fn get_bg2_vofs(&self) -> u16 {
-		self.registers[BG2_VOFS_RANGE].view_bits::<Lsb0>()[0..=9].load_le()
+	fn get_win_out(&self) -> &WinOut {
+		&self.win_out
 	}
 
-	fn get_bg3_hofs(&self) -> u16 {
-		self.registers[BG3_HOFS_RANGE].view_bits::<Lsb0>()[0..=9].load_le()
+	fn get_mosaic(&self) -> &Mosaic {
+		&self.mosaic
 	}
 
-	fn get_bg3_vofs(&self) -> u16 {
-		self.registers[BG3_VOFS_RANGE].view_bits::<Lsb0>()[0..=9].load_le()
+	fn get_blend_control(&self) -> &BlendControl {
+		&self.bld_cnt
 	}
 
-	fn get_bg2_pa(&self) -> AffineMatrixFixed {
-		AffineMatrixFixed::new(self.registers[BG2_PA_RANGE].view_bits())
-	}
-
-	fn get_bg2_pb(&self) -> AffineMatrixFixed {
-		AffineMatrixFixed::new(self.registers[BG2_PB_RANGE].view_bits())
-	}
-
-	fn get_bg2_pc(&self) -> AffineMatrixFixed {
-		AffineMatrixFixed::new(self.registers[BG2_PC_RANGE].view_bits())
-	}
-
-	fn get_bg2_pd(&self) -> AffineMatrixFixed {
-		AffineMatrixFixed::new(self.registers[BG2_PD_RANGE].view_bits())
-	}
-
-	fn get_bg2_x(&self) -> AffineBgPositionFixed {
-		AffineBgPositionFixed::new(self.registers[BG2_X_RANGE].view_bits())
-	}
-
-	fn get_bg2_y(&self) -> AffineBgPositionFixed {
-		AffineBgPositionFixed::new(self.registers[BG2_Y_RANGE].view_bits())
-	}
-
-	fn get_bg3_pa(&self) -> AffineMatrixFixed {
-		AffineMatrixFixed::new(self.registers[BG3_PA_RANGE].view_bits())
-	}
-
-	fn get_bg3_pb(&self) -> AffineMatrixFixed {
-		AffineMatrixFixed::new(self.registers[BG3_PB_RANGE].view_bits())
-	}
-
-	fn get_bg3_pc(&self) -> AffineMatrixFixed {
-		AffineMatrixFixed::new(self.registers[BG3_PC_RANGE].view_bits())
-	}
-
-	fn get_bg3_pd(&self) -> AffineMatrixFixed {
-		AffineMatrixFixed::new(self.registers[BG3_PD_RANGE].view_bits())
-	}
-
-	fn get_bg3_x(&self) -> AffineBgPositionFixed {
-		AffineBgPositionFixed::new(self.registers[BG3_X_RANGE].view_bits())
-	}
-
-	fn get_bg3_y(&self) -> AffineBgPositionFixed {
-		AffineBgPositionFixed::new(self.registers[BG3_Y_RANGE].view_bits())
-	}
-
-	fn get_win0_dimensions(&self) -> WindowDimensions {
-		WindowDimensions::new(self.registers[WIN0_H_RANGE].view_bits(), self.registers[WIN0_V_RANGE].view_bits())
-	}
-
-	fn get_win1_dimensions(&self) -> WindowDimensions {
-		WindowDimensions::new(self.registers[WIN1_H_RANGE].view_bits(), self.registers[WIN1_V_RANGE].view_bits())
-	}
-
-	fn get_win_in(&self) -> WinIn {
-		WinIn::new(self.registers[WIN_IN_RANGE].view_bits())
-	}
-
-	fn get_win_out(&self) -> WinOut {
-		WinOut::new(self.registers[WIN_OUT_RANGE].view_bits())
-	}
-
-	fn get_mosaic(&self) -> Mosaic {
-		Mosaic::new(self.registers[MOSAIC_RANGE].view_bits())
-	}
-
-	fn get_blend_control(&self) -> BlendControl {
-		BlendControl::new(self.registers[BLD_CNT_RANGE].view_bits())
-	}
-
-	fn get_a_blend_alpha(&self) -> u8 {
-		self.registers[BLD_ALPHA_RANGE].view_bits::<Lsb0>()[0..=4].load_le()
-	}
-
-	fn get_b_blend_alpha(&self) -> u8 {
-		self.registers[BLD_ALPHA_RANGE].view_bits::<Lsb0>()[8..=12].load_le()
+	fn get_blend_alpha(&self) -> &BlendAlpha {
+		&self.bld_alpha
 	}
 
 	fn get_blend_brightness(&self) -> u8 {
-		self.registers[BLD_Y_RANGE].view_bits::<Lsb0>()[0..=4].load_le()
+		self.bld_y[0..=4].load_le()
 	}
 
 	pub fn render(&mut self) -> Vec<f32> {
@@ -475,20 +352,20 @@ impl PPU {
 					EVideoMode::Mode0 => {}
 					EVideoMode::Mode1 => {}
 					EVideoMode::Mode2 => {
-						let bg3_cnt = self.get_bg3_cnt();
-						let bg3_wraparound = bg3_cnt.get_overflow_wraparound();
-						let bg3_tiles = match bg3_cnt.get_size() {
-							0x0 => 16,
-							0x1 => 32,
-							0x2 => 64,
-							0x3 => 128,
-							_ => {
-								panic!("IMPOSSIBLE!")
-							}
-						};
-
-						let bg3_x = self.get_bg3_x().get_value();
-						let bg3_y = self.get_bg3_y().get_value();
+						//						let bg3_cnt = self.get_bg3_cnt();
+						//						let bg3_wraparound = bg3_cnt.get_overflow_wraparound();
+						//						let bg3_tiles = match bg3_cnt.get_size() {
+						//							0x0 => 16,
+						//							0x1 => 32,
+						//							0x2 => 64,
+						//							0x3 => 128,
+						//							_ => {
+						//								panic!("IMPOSSIBLE!")
+						//							}
+						//						};
+						//
+						//						let bg3_x = self.get_bg3_x().get_value();
+						//						let bg3_y = self.get_bg3_y().get_value();
 
 						// Backgrounds
 						//					for x in 0..240 {
@@ -530,18 +407,30 @@ impl PPU {
 										let pixel_y;
 										if sprite.get_is_affine() {
 											let affine_matrix_starting_address = sprite.get_affine_matrix_index() * 32;
-											let pa =
-												AffineMatrixFixed::new(self.oam[affine_matrix_starting_address + 0x6..=affine_matrix_starting_address + 0x7].view_bits::<Lsb0>())
-													.get_value();
-											let pb =
-												AffineMatrixFixed::new(self.oam[affine_matrix_starting_address + 0xe..=affine_matrix_starting_address + 0xf].view_bits::<Lsb0>())
-													.get_value();
-											let pc =
-												AffineMatrixFixed::new(self.oam[affine_matrix_starting_address + 0x16..=affine_matrix_starting_address + 0x17].view_bits::<Lsb0>())
-													.get_value();
-											let pd =
-												AffineMatrixFixed::new(self.oam[affine_matrix_starting_address + 0x1e..=affine_matrix_starting_address + 0x1f].view_bits::<Lsb0>())
-													.get_value();
+											let pa = FixedPoint16Bit::with_value(
+												self.oam[affine_matrix_starting_address + 0x6..=affine_matrix_starting_address + 0x7]
+													.view_bits::<Lsb0>()
+													.load_le(),
+											)
+											.get_value();
+											let pb = FixedPoint16Bit::with_value(
+												self.oam[affine_matrix_starting_address + 0xe..=affine_matrix_starting_address + 0xf]
+													.view_bits::<Lsb0>()
+													.load_le(),
+											)
+											.get_value();
+											let pc = FixedPoint16Bit::with_value(
+												self.oam[affine_matrix_starting_address + 0x16..=affine_matrix_starting_address + 0x17]
+													.view_bits::<Lsb0>()
+													.load_le(),
+											)
+											.get_value();
+											let pd = FixedPoint16Bit::with_value(
+												self.oam[affine_matrix_starting_address + 0x1e..=affine_matrix_starting_address + 0x1f]
+													.view_bits::<Lsb0>()
+													.load_le(),
+											)
+											.get_value();
 
 											pixel_x = pixel_x0 + ((pa * x + pb * y) >> 8);
 											pixel_y = pixel_y0 + ((pc * x + pd * y) >> 8);
@@ -622,63 +511,75 @@ impl PPU {
 	}
 }
 
-pub struct DisplayControl(Gba16BitRegister);
+pub struct DisplayControl {
+	data: Gba16BitRegister,
+}
 
 impl DisplayControl {
 	pub fn new() -> Self {
-		Self { 0: Gba16BitRegister::zeroed() }
+		Self { data: Gba16BitRegister::zeroed() }
 	}
 
 	pub fn get_bg_mode(&self) -> Option<EVideoMode> {
-		FromPrimitive::from_u8(self.0[0..=2].load_le())
+		FromPrimitive::from_u8(self.data[0..=2].load_le())
 	}
 
 	pub fn get_display_frame_1(&self) -> bool {
-		self.0[4]
+		self.data[4]
 	}
 
 	pub fn get_hblank_interval_free(&self) -> bool {
-		self.0[5]
+		self.data[5]
 	}
 
 	pub fn get_sprite_1d_mapping(&self) -> bool {
-		self.0[6]
+		self.data[6]
 	}
 
 	pub fn get_forced_blank(&self) -> bool {
-		self.0[7]
+		self.data[7]
 	}
 
 	pub fn get_screen_display_bg0(&self) -> bool {
-		self.0[8]
+		self.data[8]
 	}
 
 	pub fn get_screen_display_bg1(&self) -> bool {
-		self.0[9]
+		self.data[9]
 	}
 
 	pub fn get_screen_display_bg2(&self) -> bool {
-		self.0[10]
+		self.data[10]
 	}
 
 	pub fn get_screen_display_bg3(&self) -> bool {
-		self.0[11]
+		self.data[11]
 	}
 
 	pub fn get_screen_display_sprites(&self) -> bool {
-		self.0[12]
+		self.data[12]
 	}
 
 	pub fn get_window0_display(&self) -> bool {
-		self.0[13]
+		self.data[13]
 	}
 
 	pub fn get_window1_display(&self) -> bool {
-		self.0[14]
+		self.data[14]
 	}
 
 	pub fn get_sprite_window_display(&self) -> bool {
-		self.0[15]
+		self.data[15]
+	}
+}
+
+impl IORegister<u16> for DisplayControl {
+	fn read(&self) -> u16 {
+		self.data.load_le()
+	}
+
+	fn write(&mut self, value: u16) {
+		self.data.store_le(value)
 	}
 }
 
@@ -730,11 +631,11 @@ impl DisplayStatus {
 	}
 }
 
-struct BackgroundControl<'a>(&'a Gba8BitSlice);
+struct BackgroundControl(Gba16BitRegister);
 
-impl<'a> BackgroundControl<'a> {
-	pub fn new(register: &'a Gba8BitSlice) -> Self {
-		Self { 0: register }
+impl BackgroundControl {
+	pub fn new() -> Self {
+		Self { 0: Gba16BitRegister::zeroed() }
 	}
 
 	pub fn get_bg_priority(&self) -> u8 {
@@ -766,11 +667,63 @@ impl<'a> BackgroundControl<'a> {
 	}
 }
 
-struct AffineMatrixFixed<'a>(&'a Gba8BitSlice);
+pub struct BackgroundAffineMatrix {
+	pa: FixedPoint16Bit,
+	pb: FixedPoint16Bit,
+	pc: FixedPoint16Bit,
+	pd: FixedPoint16Bit,
+	x: FixedPoint28Bit,
+	y: FixedPoint28Bit,
+}
 
-impl<'a> AffineMatrixFixed<'a> {
-	pub fn new(register: &'a Gba8BitSlice) -> Self {
-		Self { 0: register }
+impl BackgroundAffineMatrix {
+	pub fn new() -> Self {
+		Self {
+			pa: FixedPoint16Bit::new(),
+			pb: FixedPoint16Bit::new(),
+			pc: FixedPoint16Bit::new(),
+			pd: FixedPoint16Bit::new(),
+			x: FixedPoint28Bit::new(),
+			y: FixedPoint28Bit::new(),
+		}
+	}
+
+	pub fn get_pa(&self) -> &FixedPoint16Bit {
+		&self.pa
+	}
+
+	pub fn get_pb(&self) -> &FixedPoint16Bit {
+		&self.pb
+	}
+
+	pub fn get_pc(&self) -> &FixedPoint16Bit {
+		&self.pc
+	}
+
+	pub fn get_pd(&self) -> &FixedPoint16Bit {
+		&self.pd
+	}
+
+	pub fn get_x(&self) -> &FixedPoint28Bit {
+		&self.x
+	}
+
+	pub fn get_y(&self) -> &FixedPoint28Bit {
+		&self.y
+	}
+}
+
+struct FixedPoint16Bit(Gba16BitRegister);
+
+impl FixedPoint16Bit {
+	pub fn new() -> Self {
+		Self { 0: Gba16BitRegister::zeroed() }
+	}
+
+	pub fn with_value(value: u16) -> Self {
+		Self {
+			0: Gba16BitRegister::new([value; 1]),
+		}
 	}
 
 	pub fn get_fractional(&self) -> u8 {
@@ -784,20 +737,19 @@ impl<'a> AffineMatrixFixed<'a> {
 	pub fn get_value(&self) -> i32 {
 		self.0.load_le::<u16>() as i16 as i32
 	}
-
-	pub fn get_float_value(&self) -> f32 {
-		let mut result = self.get_integer() as f32;
-		result += self.get_fractional() as f32 * 1.0 / 256.0;
-
-		result
-	}
 }
 
-struct AffineBgPositionFixed<'a>(&'a Gba8BitSlice);
+struct FixedPoint28Bit(Gba32BitRegister);
 
-impl<'a> AffineBgPositionFixed<'a> {
-	pub fn new(register: &'a Gba8BitSlice) -> Self {
-		Self { 0: register }
+impl FixedPoint28Bit {
+	pub fn new() -> Self {
+		Self { 0: Gba32BitRegister::zeroed() }
+	}
+
+	pub fn with_value(value: u32) -> Self {
+		Self {
+			0: Gba32BitRegister::new([value; 1]),
+		}
 	}
 
 	pub fn get_fractional(&self) -> u8 {
@@ -808,19 +760,16 @@ impl<'a> AffineBgPositionFixed<'a> {
 		sign_extend(self.0[8..=27].load_le::<u32>(), 20)
 	}
 
-	pub fn get_value(&self) -> f32 {
-		let mut result = self.get_integer() as f32;
-		result += self.get_fractional() as f32 * 1.0 / 256.0;
-
-		result
+	pub fn get_value(&self) -> i32 {
+		sign_extend(self.0[0..=27].load_le::<u32>(), 28)
 	}
 }
 
-struct WinIn<'a>(&'a Gba8BitSlice);
+struct WinIn(Gba16BitRegister);
 
-impl<'a> WinIn<'a> {
-	pub fn new(register: &'a Gba8BitSlice) -> Self {
-		Self { 0: register }
+impl WinIn {
+	pub fn new() -> Self {
+		Self { 0: Gba16BitRegister::zeroed() }
 	}
 
 	pub fn get_win0_bg0_enabled(&self) -> bool {
@@ -872,11 +821,11 @@ impl<'a> WinIn<'a> {
 	}
 }
 
-struct WinOut<'a>(&'a Gba8BitSlice);
+struct WinOut(Gba16BitRegister);
 
-impl<'a> WinOut<'a> {
-	pub fn new(register: &'a Gba8BitSlice) -> Self {
-		Self { 0: register }
+impl WinOut {
+	pub fn new() -> Self {
+		Self { 0: Gba16BitRegister::zeroed() }
 	}
 
 	pub fn get_outside_bg0_enabled(&self) -> bool {
@@ -928,11 +877,11 @@ impl<'a> WinOut<'a> {
 	}
 }
 
-struct Mosaic<'a>(&'a Gba8BitSlice);
+struct Mosaic(Gba16BitRegister);
 
-impl<'a> Mosaic<'a> {
-	pub fn new(register: &'a Gba8BitSlice) -> Self {
-		Self { 0: register }
+impl Mosaic {
+	pub fn new() -> Self {
+		Self { 0: Gba16BitRegister::zeroed() }
 	}
 
 	pub fn get_bg_x_size(&self) -> u8 {
@@ -952,11 +901,11 @@ impl<'a> Mosaic<'a> {
 	}
 }
 
-struct BlendControl<'a>(&'a Gba8BitSlice);
+struct BlendControl(Gba16BitRegister);
 
-impl<'a> BlendControl<'a> {
-	pub fn new(register: &'a Gba8BitSlice) -> Self {
-		Self { 0: register }
+impl BlendControl {
+	pub fn new() -> Self {
+		Self { 0: Gba16BitRegister::zeroed() }
 	}
 
 	pub fn get_blend_bg0_source(&self) -> bool {
@@ -1012,12 +961,68 @@ impl<'a> BlendControl<'a> {
 	}
 }
 
+struct BlendAlpha(Gba16BitRegister);
+
+impl BlendAlpha {
+	pub fn new() -> Self {
+		Self { 0: Gba16BitRegister::zeroed() }
+	}
+
+	pub fn get_alpha_a(&self) -> u8 {
+		self.0[0..=4].load_le()
+	}
+
+	pub fn get_alpha_b(&self) -> u8 {
+		self.0[8..=12].load_le()
+	}
+}
+
 impl MemoryInterface for PPU {
 	fn read_8(&self, address: u32) -> u8 {
 		match address & 0xff00_0000 {
 			crate::system::IO_ADDR => {
-				let addr = (address & PPU_REGISTERS_END) as usize;
-				self.registers[addr]
+				let addr = (address & PPU_REGISTERS_END);
+				let shift = (addr & 0x1) * 8;
+				match addr {
+					DISP_CNT_ADDRESS => (self.disp_cnt.read() >> shift) as u8,
+					DISP_STAT_ADDRESS => 0,
+					VCOUNT_ADDRESS => 0,
+					BG0_CNT_ADDRESS => 0,
+					BG1_CNT_ADDRESS => 0,
+					BG2_CNT_ADDRESS => 0,
+					BG3_CNT_ADDRESS => 0,
+					BG0_HOFS_ADDRESS => 0,
+					BG0_VOFS_ADDRESS => 0,
+					BG1_HOFS_ADDRESS => 0,
+					BG1_VOFS_ADDRESS => 0,
+					BG2_HOFS_ADDRESS => 0,
+					BG2_VOFS_ADDRESS => 0,
+					BG3_HOFS_ADDRESS => 0,
+					BG3_VOFS_ADDRESS => 0,
+					BG2_PA_ADDRESS => 0,
+					BG2_PB_ADDRESS => 0,
+					BG2_PC_ADDRESS => 0,
+					BG2_PD_ADDRESS => 0,
+					BG2_X_ADDRESS => 0,
+					BG2_Y_ADDRESS => 0,
+					BG3_PA_ADDRESS => 0,
+					BG3_PB_ADDRESS => 0,
+					BG3_PC_ADDRESS => 0,
+					BG3_PD_ADDRESS => 0,
+					BG3_X_ADDRESS => 0,
+					BG3_Y_ADDRESS => 0,
+					WIN0_H_ADDRESS => 0,
+					WIN1_H_ADDRESS => 0,
+					WIN0_V_ADDRESS => 0,
+					WIN1_V_ADDRESS => 0,
+					WIN_IN_ADDRESS => 0,
+					WIN_OUT_ADDRESS => 0,
+					MOSAIC_ADDRESS => 0,
+					BLD_CNT_ADDRESS => 0,
+					BLD_ALPHA_ADDRESS => 0,
+					BLD_Y_ADDRESS => 0,
+					_ => 0x0,
+				}
 			}
 			PALETTE_RAM_ADDR => self.palette_ram[(address & 0x3ff) as usize],
 			VRAM_ADDR => self.vram[(address & 0x17fff) as usize],
@@ -1029,8 +1034,48 @@ impl MemoryInterface for PPU {
 	fn write_8(&mut self, address: u32, value: u8) {
 		match address & 0xff00_0000 {
 			crate::system::IO_ADDR => {
-				let addr = (address & PPU_REGISTERS_END) as usize;
-				self.registers[addr] = value;
+				let addr = (address & PPU_REGISTERS_END);
+				let shift = (addr & 0x1) * 8;
+				match addr & !0x1 {
+					DISP_CNT_ADDRESS => self.disp_cnt.write((value as u16) << shift),
+					DISP_STAT_ADDRESS => {}
+					VCOUNT_ADDRESS => {}
+					BG0_CNT_ADDRESS => {}
+					BG1_CNT_ADDRESS => {}
+					BG2_CNT_ADDRESS => {}
+					BG3_CNT_ADDRESS => {}
+					BG0_HOFS_ADDRESS => {}
+					BG0_VOFS_ADDRESS => {}
+					BG1_HOFS_ADDRESS => {}
+					BG1_VOFS_ADDRESS => {}
+					BG2_HOFS_ADDRESS => {}
+					BG2_VOFS_ADDRESS => {}
+					BG3_HOFS_ADDRESS => {}
+					BG3_VOFS_ADDRESS => {}
+					BG2_PA_ADDRESS => {}
+					BG2_PB_ADDRESS => {}
+					BG2_PC_ADDRESS => {}
+					BG2_PD_ADDRESS => {}
+					BG2_X_ADDRESS => self.bg_affine_matrices[0].x.0.store_le::<u32>((value as u32) << shift),
+					BG2_Y_ADDRESS => {}
+					BG3_PA_ADDRESS => {}
+					BG3_PB_ADDRESS => {}
+					BG3_PC_ADDRESS => {}
+					BG3_PD_ADDRESS => {}
+					BG3_X_ADDRESS => {}
+					BG3_Y_ADDRESS => {}
+					WIN0_H_ADDRESS => {}
+					WIN1_H_ADDRESS => {}
+					WIN0_V_ADDRESS => {}
+					WIN1_V_ADDRESS => {}
+					WIN_IN_ADDRESS => {}
+					WIN_OUT_ADDRESS => {}
+					MOSAIC_ADDRESS => {}
+					BLD_CNT_ADDRESS => {}
+					BLD_ALPHA_ADDRESS => {}
+					BLD_Y_ADDRESS => {}
+					_ => {}
+				}
 			}
 			PALETTE_RAM_ADDR => unsafe {
 				*(self.palette_ram.as_ptr().add(((address & 0x3ff) as usize) & !0x1) as *mut u16) = (value as u16) * 0x101;
@@ -1064,7 +1109,7 @@ impl MemoryInterface for PPU {
 			match address & 0xff00_0000 {
 				crate::system::IO_ADDR => {
 					let addr = (address & PPU_REGISTERS_END) as usize;
-					*(self.registers.as_ptr().add(addr) as *mut u16) as u16
+					0x0
 				}
 				PALETTE_RAM_ADDR => *(self.palette_ram.as_ptr().add((address & 0x3ff) as usize) as *mut u16) as u16,
 				VRAM_ADDR => *(self.vram.as_ptr().add((address & 0x17fff) as usize) as *mut u16) as u16,
@@ -1079,7 +1124,6 @@ impl MemoryInterface for PPU {
 			match address & 0xff00_0000 {
 				crate::system::IO_ADDR => {
 					let addr = (address & PPU_REGISTERS_END) as usize;
-					*(self.registers.as_ptr().add(addr) as *mut u16) = value;
 				}
 				PALETTE_RAM_ADDR => *(self.palette_ram.as_ptr().add((address & 0x3ff) as usize) as *mut u16) = value,
 				VRAM_ADDR => *(self.vram.as_ptr().add((address & 0x17fff) as usize) as *mut u16) = value,
@@ -1094,7 +1138,7 @@ impl MemoryInterface for PPU {
 			match address & 0xff00_0000 {
 				crate::system::IO_ADDR => {
 					let addr = (address & PPU_REGISTERS_END) as usize;
-					*(self.registers.as_ptr().add(addr) as *mut u32) as u32
+					0x0
 				}
 				PALETTE_RAM_ADDR => *(self.palette_ram.as_ptr().add((address & 0x3ff) as usize) as *mut u32) as u32,
 				VRAM_ADDR => *(self.vram.as_ptr().add((address & 0x17fff) as usize) as *mut u32) as u32,
@@ -1109,7 +1153,6 @@ impl MemoryInterface for PPU {
 			match address & 0xff00_0000 {
 				crate::system::IO_ADDR => {
 					let addr = (address & PPU_REGISTERS_END) as usize;
-					*(self.registers.as_ptr().add(addr) as *mut u32) = value;
 				}
 				PALETTE_RAM_ADDR => *(self.palette_ram.as_ptr().add((address & 0x3ff) as usize) as *mut u32) = value,
 				VRAM_ADDR => *(self.vram.as_ptr().add((address & 0x17fff) as usize) as *mut u32) = value,
