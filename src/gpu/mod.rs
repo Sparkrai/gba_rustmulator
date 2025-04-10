@@ -1,10 +1,12 @@
 use std::ops::Range;
 
 use bitvec::prelude::*;
+use num_derive::*;
 
-use crate::arm7tdmi::Gba8BitSlice;
+use crate::arm7tdmi::{Gba16BitRegister, Gba8BitSlice};
 use crate::system::MemoryInterface;
 use crate::system::{OAM_ADDR, PALETTE_RAM_ADDR, VRAM_ADDR};
+use num_traits::FromPrimitive;
 
 pub const PALETTE_RAM_SIZE: usize = 1 * 1024;
 pub const VRAM_SIZE: usize = 96 * 1024;
@@ -46,6 +48,49 @@ pub const MOSAIC_RANGE: Range<usize> = 0x4c..0x50;
 pub const BLD_CNT_RANGE: Range<usize> = 0x50..0x52;
 pub const BLD_ALPHA_RANGE: Range<usize> = 0x52..0x54;
 pub const BLD_Y_RANGE: Range<usize> = 0x54..0x56;
+
+#[derive(Debug, Copy, Clone, FromPrimitive, ToPrimitive)]
+pub enum EVideoMode {
+	Mode0,
+	Mode1,
+	Mode2,
+	Mode3,
+	Mode4,
+	Mode5,
+}
+
+pub struct Color {
+	data: Gba16BitRegister,
+}
+
+impl Color {
+	pub fn get_red(&self) -> u8 {
+		self.data[0x0..=0x4].load_le()
+	}
+
+	pub fn get_green(&self) -> u8 {
+		self.data[0x5..=0x9].load_le()
+	}
+
+	pub fn get_blue(&self) -> u8 {
+		self.data[0xa..=0xe].load_le()
+	}
+}
+
+pub struct Size {
+	x: u16,
+	y: u16,
+}
+
+impl Size {
+	pub fn from_encoded_u16(encoded: u16) -> Self {
+		let bits = encoded.view_bits::<Lsb0>();
+		Self {
+			x: bits[0..8].load_le(),
+			y: bits[8..16].load_le(),
+		}
+	}
+}
 
 pub struct GPU {
 	// Registers
@@ -144,113 +189,286 @@ impl GPU {
 	}
 }
 
+struct DispCnt<'a>(&'a Gba8BitSlice);
+
+impl<'a> DispCnt<'a> {
+	pub fn new(register: &'a Gba8BitSlice) -> Self {
+		Self { 0: register }
+	}
+
+	pub fn get_bg_mode(&self) -> EVideoMode {
+		FromPrimitive::from_u8(self.0[0..=2].load_le()).unwrap()
+	}
+
+	pub fn get_display_frame_1(&self) -> bool {
+		self.0[4]
+	}
+
+	pub fn get_hblank_interval_free(&self) -> bool {
+		self.0[5]
+	}
+
+	pub fn get_obj_vram_mapping_one_dimensional(&self) -> bool {
+		self.0[6]
+	}
+
+	pub fn get_forced_blank(&self) -> bool {
+		self.0[7]
+	}
+
+	pub fn get_screen_display_bg0(&self) -> bool {
+		self.0[8]
+	}
+
+	pub fn get_screen_display_bg1(&self) -> bool {
+		self.0[9]
+	}
+
+	pub fn get_screen_display_bg2(&self) -> bool {
+		self.0[10]
+	}
+
+	pub fn get_screen_display_bg3(&self) -> bool {
+		self.0[11]
+	}
+
+	pub fn get_screen_display_obj(&self) -> bool {
+		self.0[12]
+	}
+
+	pub fn get_window0_display(&self) -> bool {
+		self.0[13]
+	}
+
+	pub fn get_window1_display(&self) -> bool {
+		self.0[14]
+	}
+
+	pub fn get_obj_window_display(&self) -> bool {
+		self.0[15]
+	}
+}
+
+struct DispStat<'a>(&'a Gba8BitSlice);
+
+impl<'a> DispStat<'a> {
+	pub fn new(register: &'a Gba8BitSlice) -> Self {
+		Self { 0: register }
+	}
+
+	pub fn get_v_blank(&self) -> bool {
+		self.0[0]
+	}
+
+	pub fn get_h_blank(&self) -> bool {
+		self.0[1]
+	}
+
+	pub fn get_v_counter(&self) -> bool {
+		self.0[2]
+	}
+
+	pub fn get_v_blank_irq(&self) -> bool {
+		self.0[3]
+	}
+
+	pub fn get_h_blank_irq(&self) -> bool {
+		self.0[4]
+	}
+
+	pub fn get_v_counter_irq(&self) -> bool {
+		self.0[5]
+	}
+
+	pub fn get_v_count_trigger(&self) -> u8 {
+		self.0[8..16].load_le()
+	}
+}
+
+struct BgCnt<'a>(&'a Gba8BitSlice);
+
+impl<'a> BgCnt<'a> {
+	pub fn new(register: &'a Gba8BitSlice) -> Self {
+		Self { 0: register }
+	}
+
+	pub fn get_bg_priority(&self) -> u8 {
+		self.0[0..=1].load_le()
+	}
+
+	pub fn get_tile_data_address(&self) -> u8 {
+		self.0[2..=3].load_le()
+	}
+
+	pub fn get_mosaic(&self) -> bool {
+		self.0[6]
+	}
+
+	pub fn get_palette_type(&self) -> bool {
+		self.0[7]
+	}
+
+	pub fn get_map_data_address(&self) -> u8 {
+		self.0[8..=12].load_le()
+	}
+
+	pub fn get_overflow_wraparound(&self) -> bool {
+		self.0[13]
+	}
+
+	pub fn get_size(&self) -> u8 {
+		self.0[14..=15].load_le()
+	}
+}
+
+struct BgPixelIncrement<'a>(&'a Gba8BitSlice);
+
+impl<'a> BgPixelIncrement<'a> {
+	pub fn new(register: &'a Gba8BitSlice) -> Self {
+		Self { 0: register }
+	}
+
+	pub fn get_fractional(&self) -> u8 {
+		self.0[0..=7].load_le()
+	}
+
+	pub fn get_integer(&self) -> u8 {
+		self.0[8..=14].load_le()
+	}
+
+	pub fn get_is_negative(&self) -> bool {
+		self.0[15]
+	}
+}
+
+struct BgTransform<'a>(&'a Gba8BitSlice);
+
+impl<'a> BgTransform<'a> {
+	pub fn new(register: &'a Gba8BitSlice) -> Self {
+		Self { 0: register }
+	}
+
+	pub fn get_fractional(&self) -> u8 {
+		self.0[0..=7].load_le()
+	}
+
+	pub fn get_integer(&self) -> u8 {
+		self.0[8..=26].load_le()
+	}
+
+	pub fn get_is_negative(&self) -> bool {
+		self.0[27]
+	}
+}
+
 impl GPU {
-	fn get_disp_cnt(&self) -> &Gba8BitSlice {
-		&self.registers[DISP_CNT_RANGE].view_bits()
+	fn get_disp_cnt(&self) -> DispCnt {
+		DispCnt::new(self.registers[DISP_CNT_RANGE].view_bits())
 	}
 
-	fn get_disp_stat(&self) -> &Gba8BitSlice {
-		&self.registers[DISP_STAT_RANGE].view_bits()
+	fn get_disp_stat(&self) -> DispStat {
+		DispStat::new(self.registers[DISP_STAT_RANGE].view_bits())
 	}
 
-	fn get_vcount(&self) -> &Gba8BitSlice {
-		&self.registers[VCOUNT_RANGE].view_bits()
+	fn get_vcount(&self) -> u8 {
+		self.registers[VCOUNT_RANGE].view_bits()[0..8].load_le()
 	}
 
-	fn get_bg0_cnt(&self) -> &Gba8BitSlice {
-		&self.registers[BG0_CNT_RANGE].view_bits()
+	fn get_bg0_cnt(&self) -> BgCnt {
+		BgCnt::new(self.registers[BG0_CNT_RANGE].view_bits())
 	}
 
-	fn get_bg1_cnt(&self) -> &Gba8BitSlice {
-		&self.registers[BG1_CNT_RANGE].view_bits()
+	fn get_bg1_cnt(&self) -> BgCnt {
+		BgCnt::new(self.registers[BG1_CNT_RANGE].view_bits())
 	}
 
-	fn get_bg2_cnt(&self) -> &Gba8BitSlice {
-		&self.registers[BG2_CNT_RANGE].view_bits()
+	fn get_bg2_cnt(&self) -> BgCnt {
+		BgCnt::new(self.registers[BG2_CNT_RANGE].view_bits())
 	}
 
-	fn get_bg3_cnt(&self) -> &Gba8BitSlice {
-		&self.registers[BG3_CNT_RANGE].view_bits()
+	fn get_bg3_cnt(&self) -> BgCnt {
+		BgCnt::new(self.registers[BG3_CNT_RANGE].view_bits())
 	}
 
-	fn get_bg0_hofs(&self) -> &Gba8BitSlice {
-		&self.registers[BG0_HOFS_RANGE].view_bits()
+	// FIXME: Check if 8 or 9!!!
+	fn get_bg0_hofs(&self) -> u16 {
+		self.registers[BG0_HOFS_RANGE].view_bits()[0..=9].load_le()
 	}
 
-	fn get_bg0_vofs(&self) -> &Gba8BitSlice {
-		&self.registers[BG0_VOFS_RANGE].view_bits()
+	fn get_bg0_vofs(&self) -> u16 {
+		self.registers[BG0_VOFS_RANGE].view_bits()[0..=9].load_le()
 	}
 
 	fn get_bg1_hofs(&self) -> &Gba8BitSlice {
-		&self.registers[BG1_HOFS_RANGE].view_bits()
+		self.registers[BG1_HOFS_RANGE].view_bits()[0..=9].load_le()
 	}
 
 	fn get_bg1_vofs(&self) -> &Gba8BitSlice {
-		&self.registers[BG1_VOFS_RANGE].view_bits()
+		self.registers[BG1_VOFS_RANGE].view_bits()[0..=9].load_le()
 	}
 
 	fn get_bg2_hofs(&self) -> &Gba8BitSlice {
-		&self.registers[BG2_HOFS_RANGE].view_bits()
+		self.registers[BG2_HOFS_RANGE].view_bits()[0..=9].load_le()
 	}
 
 	fn get_bg2_vofs(&self) -> &Gba8BitSlice {
-		&self.registers[BG2_VOFS_RANGE].view_bits()
+		self.registers[BG2_VOFS_RANGE].view_bits()[0..=9].load_le()
 	}
 
 	fn get_bg3_hofs(&self) -> &Gba8BitSlice {
-		&self.registers[BG3_HOFS_RANGE].view_bits()
+		self.registers[BG3_HOFS_RANGE].view_bits()[0..=9].load_le()
 	}
 
 	fn get_bg3_vofs(&self) -> &Gba8BitSlice {
-		&self.registers[BG3_VOFS_RANGE].view_bits()
+		self.registers[BG3_VOFS_RANGE].view_bits()[0..=9].load_le()
 	}
 
-	fn get_bg2_pa(&self) -> &Gba8BitSlice {
-		&self.registers[BG2_PA_RANGE].view_bits()
+	fn get_bg2_pa(&self) -> BgPixelIncrement {
+		BgPixelIncrement::new(self.registers[BG2_PA_RANGE].view_bits())
 	}
 
-	fn get_bg2_pb(&self) -> &Gba8BitSlice {
-		&self.registers[BG2_PB_RANGE].view_bits()
+	fn get_bg2_pb(&self) -> BgPixelIncrement {
+		BgPixelIncrement::new(self.registers[BG2_PB_RANGE].view_bits())
 	}
 
-	fn get_bg2_pc(&self) -> &Gba8BitSlice {
-		&self.registers[BG2_PC_RANGE].view_bits()
+	fn get_bg2_pc(&self) -> BgPixelIncrement {
+		BgPixelIncrement::new(self.registers[BG2_PC_RANGE].view_bits())
 	}
 
-	fn get_bg2_pd(&self) -> &Gba8BitSlice {
-		&self.registers[BG2_PD_RANGE].view_bits()
+	fn get_bg2_pd(&self) -> BgPixelIncrement {
+		BgPixelIncrement::new(self.registers[BG2_PD_RANGE].view_bits())
 	}
 
-	fn get_bg2_x(&self) -> &Gba8BitSlice {
-		&self.registers[BG2_X_RANGE].view_bits()
+	fn get_bg2_x(&self) -> BgTransform {
+		BgTransform::new(self.registers[BG2_X_RANGE].view_bits())
 	}
 
-	fn get_bg2_y(&self) -> &Gba8BitSlice {
-		&self.registers[BG2_Y_RANGE].view_bits()
+	fn get_bg2_y(&self) -> BgTransform {
+		BgTransform::new(self.registers[BG2_Y_RANGE].view_bits())
 	}
 
-	fn get_bg3_pa(&self) -> &Gba8BitSlice {
-		&self.registers[BG3_PA_RANGE].view_bits()
+	fn get_bg3_pa(&self) -> BgPixelIncrement {
+		BgPixelIncrement::new(self.registers[BG3_PA_RANGE].view_bits())
 	}
 
-	fn get_bg3_pb(&self) -> &Gba8BitSlice {
-		&self.registers[BG3_PB_RANGE].view_bits()
+	fn get_bg3_pb(&self) -> BgPixelIncrement {
+		BgPixelIncrement::new(self.registers[BG3_PB_RANGE].view_bits())
 	}
 
-	fn get_bg3_pc(&self) -> &Gba8BitSlice {
-		&self.registers[BG3_PC_RANGE].view_bits()
+	fn get_bg3_pc(&self) -> BgPixelIncrement {
+		BgPixelIncrement::new(self.registers[BG3_PC_RANGE].view_bits())
 	}
 
-	fn get_bg3_pd(&self) -> &Gba8BitSlice {
-		&self.registers[BG3_PD_RANGE].view_bits()
+	fn get_bg3_pd(&self) -> BgPixelIncrement {
+		BgPixelIncrement::new(self.registers[BG3_PD_RANGE].view_bits())
 	}
 
-	fn get_bg3_x(&self) -> &Gba8BitSlice {
-		&self.registers[BG3_X_RANGE].view_bits()
+	fn get_bg3_x(&self) -> BgTransform {
+		BgTransform::new(self.registers[BG3_X_RANGE].view_bits())
 	}
 
-	fn get_bg3_y(&self) -> &Gba8BitSlice {
-		&self.registers[BG3_Y_RANGE].view_bits()
+	fn get_bg3_y(&self) -> BgTransform {
+		BgTransform::new(self.registers[BG3_Y_RANGE].view_bits())
 	}
 
 	fn get_win0_h(&self) -> &Gba8BitSlice {

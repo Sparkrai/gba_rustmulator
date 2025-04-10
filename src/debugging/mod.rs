@@ -20,8 +20,8 @@ pub fn build_memory_debug_window(
 ) {
 	Window::new(im_str!("Current Memory"))
 		.size([600.0, 500.0], Condition::FirstUseEver)
-		.position([750.0, 100.0], Condition::FirstUseEver)
 		.opened(show_memory_window)
+		.position([750.0, 75.0], Condition::Always)
 		.build(ui, || {
 			if !*debug_mode {
 				if *breakpoint_set {

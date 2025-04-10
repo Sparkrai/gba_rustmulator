@@ -2,11 +2,14 @@ use glium::glutin;
 use glium::glutin::event::{Event, WindowEvent};
 use glium::glutin::event_loop::{ControlFlow, EventLoop};
 use glium::glutin::window::WindowBuilder;
+use glium::texture::TextureAny;
+use glium::uniforms::{MagnifySamplerFilter, MinifySamplerFilter, SamplerBehavior};
 use glium::{Display, Surface};
-use imgui::{Context, FontConfig, FontSource, Ui};
-use imgui_glium_renderer::Renderer;
+use imgui::{Context, FontConfig, FontSource, TextureId, Ui};
+use imgui_glium_renderer::{Renderer, Texture};
 use imgui_winit_support::{HiDpiMode, WinitPlatform};
 use std::path::Path;
+use std::rc::Rc;
 use std::time::Instant;
 
 pub struct System {
@@ -68,7 +71,7 @@ pub fn init(title: &str) -> System {
 }
 
 impl System {
-	pub fn main_loop<F: FnMut(&mut bool, &mut Ui) + 'static>(self, mut run_ui: F) {
+	pub fn main_loop<F: FnMut(&mut bool, &mut Ui) + 'static>(mut self, mut run_ui: F) {
 		let System {
 			event_loop,
 			display,
