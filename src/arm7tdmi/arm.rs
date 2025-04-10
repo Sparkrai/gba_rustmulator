@@ -74,7 +74,7 @@ pub fn operate_arm(cpu: &mut CPU, bus: &mut SystemBus, instruction: u32) {
 					cpu.set_register_value(rd_index, alu_out);
 
 					if s {
-						cpu.get_mut_cpsr().set_n((alu_out & 0x8000_0000) != 0);
+						cpu.get_mut_cpsr().set_n(alu_out.view_bits::<Lsb0>()[31]);
 						cpu.get_mut_cpsr().set_z(alu_out == 0);
 						cpu.get_mut_cpsr().set_c(false);
 					}
@@ -85,7 +85,7 @@ pub fn operate_arm(cpu: &mut CPU, bus: &mut SystemBus, instruction: u32) {
 					cpu.set_register_value(rd_index, alu_out);
 
 					if s {
-						cpu.get_mut_cpsr().set_n((alu_out & 0x8000_0000) != 0);
+						cpu.get_mut_cpsr().set_n(alu_out.view_bits::<Lsb0>()[31]);
 						cpu.get_mut_cpsr().set_z(alu_out == 0);
 						cpu.get_mut_cpsr().set_c(false);
 					}
@@ -213,12 +213,12 @@ pub fn operate_arm(cpu: &mut CPU, bus: &mut SystemBus, instruction: u32) {
 			psr.set_value((psr.get_value() & !mask) | (operand & mask));
 		} else if (0x0c00_0000 & instruction) == 0x0400_0000 {
 			// LDR/STR Single Data Transfer
-			let i = (0x0200_0000 & instruction) > 0;
-			let p = (0x0100_0000 & instruction) > 0;
-			let u = (0x0080_0000 & instruction) > 0;
-			let b = (0x0040_0000 & instruction) > 0;
-			let w = (0x0020_0000 & instruction) > 0;
-			let l = (0x0010_0000 & instruction) > 0;
+			let i = (0x0200_0000 & instruction) != 0;
+			let p = (0x0100_0000 & instruction) != 0;
+			let u = (0x0080_0000 & instruction) != 0;
+			let b = (0x0040_0000 & instruction) != 0;
+			let w = (0x0020_0000 & instruction) != 0;
+			let l = (0x0010_0000 & instruction) != 0;
 
 			let rn_index = ((instruction & 0x000f_0000) >> 16) as u8;
 			let rn = cpu.get_register_value(rn_index);
@@ -743,7 +743,7 @@ pub fn operate_arm(cpu: &mut CPU, bus: &mut SystemBus, instruction: u32) {
 								// NOTE: UNPREDICTABLE!
 							}
 						} else {
-							cpu.get_mut_cpsr().set_n((alu_out & 0x8000_0000) != 0);
+							cpu.get_mut_cpsr().set_n(alu_out.view_bits::<Lsb0>()[31]);
 							cpu.get_mut_cpsr().set_z(alu_out == 0);
 							cpu.get_mut_cpsr().set_c(shifter_carry_out);
 						}
@@ -763,7 +763,7 @@ pub fn operate_arm(cpu: &mut CPU, bus: &mut SystemBus, instruction: u32) {
 								// NOTE: UNPREDICTABLE!
 							}
 						} else {
-							cpu.get_mut_cpsr().set_n((alu_out & 0x8000_0000) != 0);
+							cpu.get_mut_cpsr().set_n(alu_out.view_bits::<Lsb0>()[31]);
 							cpu.get_mut_cpsr().set_z(alu_out == 0);
 							cpu.get_mut_cpsr().set_c(shifter_carry_out);
 						}
@@ -785,9 +785,9 @@ pub fn operate_arm(cpu: &mut CPU, bus: &mut SystemBus, instruction: u32) {
 							}
 						} else {
 							// Overflow is sign changes
-							let overflow = rn.view_bits::<Lsb0>()[31] != shifter_operand.view_bits::<Lsb0>()[31] && rn.view_bits::<Lsb0>()[31] != alu_out.view_bits::<Lsb0>()[31];
+							let (_, overflow) = (rn as i32).overflowing_sub(shifter_operand as i32);
 
-							cpu.get_mut_cpsr().set_n((alu_out & 0x8000_0000) != 0);
+							cpu.get_mut_cpsr().set_n(alu_out.view_bits::<Lsb0>()[31]);
 							cpu.get_mut_cpsr().set_z(alu_out == 0);
 							cpu.get_mut_cpsr().set_c(!borrowed);
 							cpu.get_mut_cpsr().set_v(overflow);
@@ -810,10 +810,9 @@ pub fn operate_arm(cpu: &mut CPU, bus: &mut SystemBus, instruction: u32) {
 							}
 						} else {
 							// Overflow if sign changes
-							let overflow =
-								shifter_operand.view_bits::<Lsb0>()[31] != rn.view_bits::<Lsb0>()[31] && shifter_operand.view_bits::<Lsb0>()[31] != alu_out.view_bits::<Lsb0>()[31];
+							let (_, overflow) = (rn as i32).overflowing_sub(shifter_operand as i32);
 
-							cpu.get_mut_cpsr().set_n((alu_out & 0x8000_0000) != 0);
+							cpu.get_mut_cpsr().set_n(alu_out.view_bits::<Lsb0>()[31]);
 							cpu.get_mut_cpsr().set_z(alu_out == 0);
 							cpu.get_mut_cpsr().set_c(!borrowed);
 							cpu.get_mut_cpsr().set_v(overflow);
@@ -836,9 +835,9 @@ pub fn operate_arm(cpu: &mut CPU, bus: &mut SystemBus, instruction: u32) {
 							}
 						} else {
 							// Overflow if sign changes
-							let overflow = rn.view_bits::<Lsb0>()[31] == shifter_operand.view_bits::<Lsb0>()[31] && rn.view_bits::<Lsb0>()[31] != alu_out.view_bits::<Lsb0>()[31];
+							let (_, overflow) = (rn as i32).overflowing_add(shifter_operand as i32);
 
-							cpu.get_mut_cpsr().set_n((alu_out & 0x8000_0000) != 0);
+							cpu.get_mut_cpsr().set_n(alu_out.view_bits::<Lsb0>()[31]);
 							cpu.get_mut_cpsr().set_z(alu_out == 0);
 							cpu.get_mut_cpsr().set_c(borrowed);
 							cpu.get_mut_cpsr().set_v(overflow);
@@ -864,11 +863,11 @@ pub fn operate_arm(cpu: &mut CPU, bus: &mut SystemBus, instruction: u32) {
 							}
 						} else {
 							// Overflow if sign changes
-							let overflow = (rn.view_bits::<Lsb0>()[31] == shifter_operand.view_bits::<Lsb0>()[31]
-								&& rn.view_bits::<Lsb0>()[31] != alu_out_first.view_bits::<Lsb0>()[31])
-								|| (!alu_out_first.view_bits::<Lsb0>()[31] && alu_out.view_bits::<Lsb0>()[31]);
+							let (_, overflow_first) = (rn as i32).overflowing_add(shifter_operand as i32);
+							let (_, overflow_second) = (alu_out_first as i32).overflowing_add(c as i32);
+							let overflow = overflow_first || overflow_second;
 
-							cpu.get_mut_cpsr().set_n((alu_out & 0x8000_0000) != 0);
+							cpu.get_mut_cpsr().set_n(alu_out.view_bits::<Lsb0>()[31]);
 							cpu.get_mut_cpsr().set_z(alu_out == 0);
 							cpu.get_mut_cpsr().set_c(borrowed);
 							cpu.get_mut_cpsr().set_v(overflow);
@@ -894,11 +893,11 @@ pub fn operate_arm(cpu: &mut CPU, bus: &mut SystemBus, instruction: u32) {
 							}
 						} else {
 							// Overflow if sign changes
-							let overflow = (rn.view_bits::<Lsb0>()[31] != shifter_operand.view_bits::<Lsb0>()[31]
-								&& rn.view_bits::<Lsb0>()[31] != alu_out_first.view_bits::<Lsb0>()[31])
-								|| (alu_out_first.view_bits::<Lsb0>()[31] && !alu_out.view_bits::<Lsb0>()[31]);
+							let (_, overflow_first) = (rn as i32).overflowing_sub(shifter_operand as i32);
+							let (_, overflow_second) = (alu_out_first as i32).overflowing_sub(c as i32);
+							let overflow = overflow_first || overflow_second;
 
-							cpu.get_mut_cpsr().set_n((alu_out & 0x8000_0000) != 0);
+							cpu.get_mut_cpsr().set_n(alu_out.view_bits::<Lsb0>()[31]);
 							cpu.get_mut_cpsr().set_z(alu_out == 0);
 							cpu.get_mut_cpsr().set_c(!borrowed);
 							cpu.get_mut_cpsr().set_v(overflow);
@@ -924,11 +923,11 @@ pub fn operate_arm(cpu: &mut CPU, bus: &mut SystemBus, instruction: u32) {
 							}
 						} else {
 							// Overflow if sign changes
-							let overflow = (shifter_operand.view_bits::<Lsb0>()[31] != rn.view_bits::<Lsb0>()[31]
-								&& shifter_operand.view_bits::<Lsb0>()[31] != alu_out_first.view_bits::<Lsb0>()[31])
-								|| (alu_out_first.view_bits::<Lsb0>()[31] && !alu_out.view_bits::<Lsb0>()[31]);
+							let (_, overflow_first) = (shifter_operand as i32).overflowing_sub(rn as i32);
+							let (_, overflow_second) = (alu_out_first as i32).overflowing_sub(c as i32);
+							let overflow = overflow_first || overflow_second;
 
-							cpu.get_mut_cpsr().set_n((alu_out & 0x8000_0000) != 0);
+							cpu.get_mut_cpsr().set_n(alu_out.view_bits::<Lsb0>()[31]);
 							cpu.get_mut_cpsr().set_z(alu_out == 0);
 							cpu.get_mut_cpsr().set_c(!borrowed);
 							cpu.get_mut_cpsr().set_v(overflow);
@@ -948,7 +947,7 @@ pub fn operate_arm(cpu: &mut CPU, bus: &mut SystemBus, instruction: u32) {
 						}
 					}
 
-					cpu.get_mut_cpsr().set_n((alu_out & 0x8000_0000) != 0);
+					cpu.get_mut_cpsr().set_n(alu_out.view_bits::<Lsb0>()[31]);
 					cpu.get_mut_cpsr().set_z(alu_out == 0);
 					cpu.get_mut_cpsr().set_c(shifter_carry_out);
 				}
@@ -965,7 +964,7 @@ pub fn operate_arm(cpu: &mut CPU, bus: &mut SystemBus, instruction: u32) {
 						}
 					}
 
-					cpu.get_mut_cpsr().set_n((alu_out & 0x8000_0000) != 0);
+					cpu.get_mut_cpsr().set_n(alu_out.view_bits::<Lsb0>()[31]);
 					cpu.get_mut_cpsr().set_z(alu_out == 0);
 					cpu.get_mut_cpsr().set_c(shifter_carry_out);
 				}
@@ -974,7 +973,7 @@ pub fn operate_arm(cpu: &mut CPU, bus: &mut SystemBus, instruction: u32) {
 					// Borrowed if carries bits over
 					let (alu_out, borrowed) = rn.overflowing_sub(shifter_operand);
 					// Overflow is sign changes
-					let overflow = rn.view_bits::<Lsb0>()[31] != shifter_operand.view_bits::<Lsb0>()[31] && rn.view_bits::<Lsb0>()[31] != alu_out.view_bits::<Lsb0>()[31];
+					let (_, overflow) = (rn as i32).overflowing_sub(shifter_operand as i32);
 
 					if rd_index == PROGRAM_COUNTER_REGISTER {
 						if cpu.get_operating_mode() != EOperatingMode::UserMode && cpu.get_operating_mode() != EOperatingMode::SystemMode {
@@ -985,7 +984,7 @@ pub fn operate_arm(cpu: &mut CPU, bus: &mut SystemBus, instruction: u32) {
 						}
 					}
 
-					cpu.get_mut_cpsr().set_n((alu_out & 0x8000_0000) != 0);
+					cpu.get_mut_cpsr().set_n(alu_out.view_bits::<Lsb0>()[31]);
 					cpu.get_mut_cpsr().set_z(alu_out == 0);
 					cpu.get_mut_cpsr().set_c(!borrowed);
 					cpu.get_mut_cpsr().set_v(overflow);
@@ -995,7 +994,7 @@ pub fn operate_arm(cpu: &mut CPU, bus: &mut SystemBus, instruction: u32) {
 					// Borrowed if carries bits over
 					let (alu_out, borrowed) = rn.overflowing_add(shifter_operand);
 					// Overflow is sign changes
-					let overflow = rn.view_bits::<Lsb0>()[31] == shifter_operand.view_bits::<Lsb0>()[31] && rn.view_bits::<Lsb0>()[31] != alu_out.view_bits::<Lsb0>()[31];
+					let (_, overflow) = (rn as i32).overflowing_add(shifter_operand as i32);
 
 					if rd_index == PROGRAM_COUNTER_REGISTER {
 						if cpu.get_operating_mode() != EOperatingMode::UserMode && cpu.get_operating_mode() != EOperatingMode::SystemMode {
@@ -1006,7 +1005,7 @@ pub fn operate_arm(cpu: &mut CPU, bus: &mut SystemBus, instruction: u32) {
 						}
 					}
 
-					cpu.get_mut_cpsr().set_n((alu_out & 0x8000_0000) != 0);
+					cpu.get_mut_cpsr().set_n(alu_out.view_bits::<Lsb0>()[31]);
 					cpu.get_mut_cpsr().set_z(alu_out == 0);
 					cpu.get_mut_cpsr().set_c(borrowed);
 					cpu.get_mut_cpsr().set_v(overflow);
@@ -1025,7 +1024,7 @@ pub fn operate_arm(cpu: &mut CPU, bus: &mut SystemBus, instruction: u32) {
 								// NOTE: UNPREDICTABLE!
 							}
 						} else {
-							cpu.get_mut_cpsr().set_n((alu_out & 0x8000_0000) != 0);
+							cpu.get_mut_cpsr().set_n(alu_out.view_bits::<Lsb0>()[31]);
 							cpu.get_mut_cpsr().set_z(alu_out == 0);
 							cpu.get_mut_cpsr().set_c(shifter_carry_out);
 						}
@@ -1060,7 +1059,7 @@ pub fn operate_arm(cpu: &mut CPU, bus: &mut SystemBus, instruction: u32) {
 								// NOTE: UNPREDICTABLE!
 							}
 						} else {
-							cpu.get_mut_cpsr().set_n((alu_out & 0x8000_0000) != 0);
+							cpu.get_mut_cpsr().set_n(alu_out.view_bits::<Lsb0>()[31]);
 							cpu.get_mut_cpsr().set_z(alu_out == 0);
 							cpu.get_mut_cpsr().set_c(shifter_carry_out);
 						}
@@ -1080,7 +1079,7 @@ pub fn operate_arm(cpu: &mut CPU, bus: &mut SystemBus, instruction: u32) {
 								// NOTE: UNPREDICTABLE!
 							}
 						} else {
-							cpu.get_mut_cpsr().set_n((alu_out & 0x8000_0000) != 0);
+							cpu.get_mut_cpsr().set_n(alu_out.view_bits::<Lsb0>()[31]);
 							cpu.get_mut_cpsr().set_z(alu_out == 0);
 							cpu.get_mut_cpsr().set_c(shifter_carry_out);
 						}

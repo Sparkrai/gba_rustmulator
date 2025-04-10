@@ -134,8 +134,8 @@ pub struct WindowDimensions {
 impl WindowDimensions {
 	pub fn new() -> Self {
 		Self {
-			h: Gba16BitRegister::zeroed(),
-			v: Gba16BitRegister::zeroed(),
+			h: bitarr![Lsb0, u16; 0; 16],
+			v: bitarr![Lsb0, u16; 0; 16],
 		}
 	}
 
@@ -282,7 +282,7 @@ impl PPU {
 			mosaic: Mosaic::new(),
 			bld_cnt: BlendControl::new(),
 			bld_alpha: BlendAlpha::new(),
-			bld_y: Gba16BitRegister::zeroed(),
+			bld_y: bitarr![Lsb0, u16; 0; 16],
 
 			palette_ram: vec![0; PALETTE_RAM_SIZE].into_boxed_slice(),
 			vram: vec![0; VRAM_SIZE].into_boxed_slice(),
@@ -422,13 +422,13 @@ impl PPU {
 											{
 												let pixel_index = (screen_x as usize + (screen_y as usize * 240)) * 3;
 
-												let tx = pixel_x as usize / 8;
-												let ty = pixel_y as usize / 8;
+												let tx = pixel_x / 8;
+												let ty = pixel_y / 8;
 												let tile = tx + ty * bg_tiles;
-												let tile_number = self.vram[(bg_cnt.get_map_data_address() + tile) * 0x800] as usize;
+												let tile_number = self.vram[bg_cnt.get_map_data_address() + tile as usize] as usize;
 
 												let tile_pixel = ((pixel_x % 8) + (pixel_y % 8) * 8) as usize;
-												let tile_address = (bg_cnt.get_tile_data_address() * 0x4000) + (tile_number * 64);
+												let tile_address = bg_cnt.get_tile_data_address() + (tile_number * 64);
 												let palette_entry = self.vram[tile_address + tile_pixel] as u32;
 
 												if palette_entry != 0 {
@@ -465,20 +465,39 @@ impl PPU {
 
 											let tx = pixel_x as usize / 8;
 											let ty = pixel_y as usize / 8;
-											let tile = tx + ty * 32;
-											let map = tx % 32 + ty * 32 + (tx / 32 + ty / 32 * ;
-											let tile_number = self.vram[(bg_cnt.get_map_data_address() + tile) * 0x800] as usize;
+											let tile = tx % 32 + ((ty % 32) * 32) + ((tx / 32 + ty / 32 * 2) * 0x400);
+											let bg_map = Gba16BitRegister::new([self.read_16(VRAM_ADDR + (bg_cnt.get_map_data_address() + tile * 2) as u32); 1]);
+											let tile_number = bg_map[0..=9].load_le::<usize>();
+											let h_flip = bg_map[10];
+											let v_flip = bg_map[11];
 
-											let tile_pixel = ((pixel_x % 8) + (pixel_y % 8) * 8) as usize;
-											let tile_address = (bg_cnt.get_tile_data_address() * 0x4000) + (tile_number * 64);
-											let palette_entry = self.vram[tile_address + tile_pixel] as u32;
+											if bg_cnt.get_is_256_palette() {
+												let tile_pixel = ((pixel_x % 8) + (pixel_y % 8) * 8) as usize;
+												let tile_address = bg_cnt.get_tile_data_address() + (tile_number * 64);
+												let palette_entry = self.vram[tile_address + tile_pixel] as u32;
 
-											if palette_entry != 0 {
-												let color = Color::new(self.read_16(PALETTE_RAM_ADDR as u32 + palette_entry * 2));
+												if palette_entry != 0 {
+													let color = Color::new(self.read_16(PALETTE_RAM_ADDR as u32 + palette_entry * 2));
 
-												pixels[pixel_index] = color.get_red();
-												pixels[pixel_index + 1] = color.get_green();
-												pixels[pixel_index + 2] = color.get_blue();
+													pixels[pixel_index] = color.get_red();
+													pixels[pixel_index + 1] = color.get_green();
+													pixels[pixel_index + 2] = color.get_blue();
+												}
+											} else {
+												let tile_pixel = ((pixel_x % 8) + (pixel_y % 8) * 8) as usize;
+												let tile_address = bg_cnt.get_tile_data_address() + (tile_number * 32);
+												let palette_entry = self.vram[tile_address + tile_pixel / 2] as u32;
+
+												if palette_entry != 0 {
+													let palette_offset = bg_map[12..16].load_le::<u32>() * 16;
+													let palette_index = palette_entry & (0xff << ((tile_number as u32 & 1) * 8));
+													let color_address = PALETTE_RAM_ADDR as u32 + (palette_offset + palette_index) * 2;
+													let color = Color::new(self.read_16(color_address));
+
+													pixels[pixel_index] = color.get_red();
+													pixels[pixel_index + 1] = color.get_green();
+													pixels[pixel_index + 2] = color.get_blue();
+												}
 											}
 										}
 									}
@@ -618,7 +637,7 @@ pub struct DisplayControl {
 
 impl DisplayControl {
 	pub fn new() -> Self {
-		Self { data: Gba16BitRegister::zeroed() }
+		Self { data: bitarr![Lsb0, u16; 0; 16] }
 	}
 
 	pub fn get_bg_mode(&self) -> Option<EVideoMode> {
@@ -629,7 +648,7 @@ impl DisplayControl {
 		self.data[4]
 	}
 
-	pub fn get_hblank_interval_free(&self) -> bool {
+	pub fn get_h_blank_interval_free(&self) -> bool {
 		self.data[5]
 	}
 
@@ -684,7 +703,7 @@ pub struct DisplayStatus {
 
 impl DisplayStatus {
 	pub fn new() -> Self {
-		Self { data: Gba16BitRegister::zeroed() }
+		Self { data: bitarr![Lsb0, u16; 0; 16] }
 	}
 
 	pub fn get_v_blank(&self) -> bool {
@@ -734,7 +753,7 @@ struct BackgroundControl {
 
 impl BackgroundControl {
 	pub fn new() -> Self {
-		Self { data: Gba16BitRegister::zeroed() }
+		Self { data: bitarr![Lsb0, u16; 0; 16] }
 	}
 
 	pub fn get_bg_priority(&self) -> u8 {
@@ -749,7 +768,7 @@ impl BackgroundControl {
 		self.data[6]
 	}
 
-	pub fn get_palette_type(&self) -> bool {
+	pub fn get_is_256_palette(&self) -> bool {
 		self.data[7]
 	}
 
@@ -818,7 +837,7 @@ struct FixedPoint16Bit {
 
 impl FixedPoint16Bit {
 	pub fn new() -> Self {
-		Self { data: Gba16BitRegister::zeroed() }
+		Self { data: bitarr![Lsb0, u16; 0; 16] }
 	}
 
 	pub fn with_value(value: u16) -> Self {
@@ -846,7 +865,7 @@ struct FixedPoint28Bit {
 
 impl FixedPoint28Bit {
 	pub fn new() -> Self {
-		Self { data: Gba32BitRegister::zeroed() }
+		Self { data: bitarr![Lsb0, u32; 0; 32] }
 	}
 
 	pub fn with_value(value: u32) -> Self {
@@ -874,7 +893,7 @@ struct WinIn {
 
 impl WinIn {
 	pub fn new() -> Self {
-		Self { data: Gba16BitRegister::zeroed() }
+		Self { data: bitarr![Lsb0, u16; 0; 16] }
 	}
 
 	pub fn get_win0_bg0_enabled(&self) -> bool {
@@ -932,7 +951,7 @@ struct WinOut {
 
 impl WinOut {
 	pub fn new() -> Self {
-		Self { data: Gba16BitRegister::zeroed() }
+		Self { data: bitarr![Lsb0, u16; 0; 16] }
 	}
 
 	pub fn get_outside_bg0_enabled(&self) -> bool {
@@ -990,7 +1009,7 @@ struct Mosaic {
 
 impl Mosaic {
 	pub fn new() -> Self {
-		Self { data: Gba16BitRegister::zeroed() }
+		Self { data: bitarr![Lsb0, u16; 0; 16] }
 	}
 
 	pub fn get_bg_x_size(&self) -> u8 {
@@ -1016,7 +1035,7 @@ struct BlendControl {
 
 impl BlendControl {
 	pub fn new() -> Self {
-		Self { data: Gba16BitRegister::zeroed() }
+		Self { data: bitarr![Lsb0, u16; 0; 16] }
 	}
 
 	pub fn get_blend_bg0_source(&self) -> bool {
@@ -1078,7 +1097,7 @@ struct BlendAlpha {
 
 impl BlendAlpha {
 	pub fn new() -> Self {
-		Self { data: Gba16BitRegister::zeroed() }
+		Self { data: bitarr![Lsb0, u16; 0; 16] }
 	}
 
 	pub fn get_alpha_a(&self) -> u8 {
@@ -1094,21 +1113,20 @@ impl MemoryInterface for PPU {
 	fn read_8(&self, address: u32) -> u8 {
 		match address & 0xff00_0000 {
 			crate::system::IO_ADDR => {
-				let addr = address & PPU_REGISTERS_END;
-				let shift16 = (addr as usize & 0x1) * 8;
-				let shift32 = (addr as usize & 0x3) * 8;
+				let addr = address & 0x00ff_ffff;
+				let shift = (addr as usize & 0x1) * 8;
 				match addr & !0x1 {
-					DISP_CNT_ADDRESS => self.disp_cnt.data[shift16..shift16 + 8].load_le(),
-					DISP_STAT_ADDRESS => self.disp_stat.data[shift16..shift16 + 8].load_le(),
-					VCOUNT_ADDRESS => self.v_count >> shift16, // 0 if addressing the upper bits
-					BG0_CNT_ADDRESS => self.bg_controls[0].data[shift16..shift16 + 8].load_le(),
-					BG1_CNT_ADDRESS => self.bg_controls[1].data[shift16..shift16 + 8].load_le(),
-					BG2_CNT_ADDRESS => self.bg_controls[2].data[shift16..shift16 + 8].load_le(),
-					BG3_CNT_ADDRESS => self.bg_controls[3].data[shift16..shift16 + 8].load_le(),
-					WIN_IN_ADDRESS => self.win_in.data[shift16..shift16 + 8].load_le(),
-					WIN_OUT_ADDRESS => self.win_out.data[shift16..shift16 + 8].load_le(),
-					BLD_CNT_ADDRESS => self.bld_cnt.data[shift16..shift16 + 8].load_le(),
-					BLD_ALPHA_ADDRESS => self.bld_alpha.data[shift16..shift16 + 8].load_le(),
+					DISP_CNT_ADDRESS => self.disp_cnt.data[shift..shift + 8].load_le(),
+					DISP_STAT_ADDRESS => self.disp_stat.data[shift..shift + 8].load_le(),
+					VCOUNT_ADDRESS => self.v_count >> shift, // 0 if addressing the upper bits
+					BG0_CNT_ADDRESS => self.bg_controls[0].data[shift..shift + 8].load_le(),
+					BG1_CNT_ADDRESS => self.bg_controls[1].data[shift..shift + 8].load_le(),
+					BG2_CNT_ADDRESS => self.bg_controls[2].data[shift..shift + 8].load_le(),
+					BG3_CNT_ADDRESS => self.bg_controls[3].data[shift..shift + 8].load_le(),
+					WIN_IN_ADDRESS => self.win_in.data[shift..shift + 8].load_le(),
+					WIN_OUT_ADDRESS => self.win_out.data[shift..shift + 8].load_le(),
+					BLD_CNT_ADDRESS => self.bld_cnt.data[shift..shift + 8].load_le(),
+					BLD_ALPHA_ADDRESS => self.bld_alpha.data[shift..shift + 8].load_le(),
 					_ => 0x0,
 				}
 			}
@@ -1122,7 +1140,7 @@ impl MemoryInterface for PPU {
 	fn write_8(&mut self, address: u32, value: u8) {
 		match address & 0xff00_0000 {
 			crate::system::IO_ADDR => {
-				let addr = address & PPU_REGISTERS_END;
+				let addr = address & 0x00ff_ffff;
 				let shift16 = (addr as usize & 0x1) * 8;
 				let shift32 = (addr as usize & 0x3) * 8;
 				match addr & !0x1 {
@@ -1201,7 +1219,7 @@ impl MemoryInterface for PPU {
 		unsafe {
 			match address & 0xff00_0000 {
 				crate::system::IO_ADDR => {
-					let addr = address & PPU_REGISTERS_END;
+					let addr = address & 0x00ff_ffff;
 					match addr {
 						DISP_CNT_ADDRESS => self.disp_cnt.data.load_le(),
 						DISP_STAT_ADDRESS => self.disp_stat.data.load_le(),
@@ -1229,7 +1247,7 @@ impl MemoryInterface for PPU {
 		unsafe {
 			match address & 0xff00_0000 {
 				crate::system::IO_ADDR => {
-					let addr = address & PPU_REGISTERS_END;
+					let addr = address & 0x00ff_ffff;
 					match addr {
 						DISP_CNT_ADDRESS => self.disp_cnt.data.store_le(value),
 						DISP_STAT_ADDRESS => self.disp_stat.data.store_le(value),
@@ -1287,7 +1305,7 @@ impl MemoryInterface for PPU {
 		unsafe {
 			match address & 0xff00_0000 {
 				crate::system::IO_ADDR => {
-					let addr = address & PPU_REGISTERS_END;
+					let addr = address & 0x00ff_ffff;
 					// NOTE: Memory accesses are always aligned!!!
 					match addr {
 						DISP_CNT_ADDRESS => self.disp_cnt.data.load_le::<u32>(),
@@ -1311,13 +1329,17 @@ impl MemoryInterface for PPU {
 		unsafe {
 			match address & 0xff00_0000 {
 				crate::system::IO_ADDR => {
-					let addr = address & PPU_REGISTERS_END;
+					let addr = address & 0x00ff_ffff;
 					match addr {
 						DISP_CNT_ADDRESS => self.disp_cnt.data.store_le(value as u16),
 						DISP_STAT_ADDRESS => self.disp_stat.data.store_le(value as u16),
 						BG0_CNT_ADDRESS => {
 							self.bg_controls[0].data.store_le(value as u16);
 							self.bg_controls[1].data.store_le((value >> 16) as u16);
+						}
+						BG2_CNT_ADDRESS => {
+							self.bg_controls[2].data.store_le(value as u16);
+							self.bg_controls[3].data.store_le((value >> 16) as u16);
 						}
 						BG0_HOFS_ADDRESS => {
 							self.bg_hofs[0] = value as u16;

@@ -37,7 +37,7 @@ fn main() {
 	File::open("data/bios.gba").expect("Bios couldn't be opened!").read_to_end(&mut bios_data).unwrap();
 
 	let mut cartridge_data = Vec::<u8>::new();
-	if File::open("data/demos/sbb_aff.gba")
+	if File::open("data/demos/sbb_reg.gba")
 		.expect("Cartridge couldn't be opened!")
 		.read_to_end(&mut cartridge_data)
 		.is_ok()

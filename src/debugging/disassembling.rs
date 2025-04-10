@@ -408,7 +408,7 @@ pub fn disassemble_arm(instruction: u32) -> String {
 		} else if (0x0000_0060 & instruction) != 0 {
 			op = "SH"
 		} else {
-			panic!("ERROR!!!");
+			op = ("ERROR!!!");
 		}
 
 		let rn = (instruction & 0x000f_0000) >> 16;

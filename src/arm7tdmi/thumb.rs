@@ -23,7 +23,7 @@ pub fn operate_thumb(instruction: u16, cpu: &mut CPU, bus: &mut SystemBus) {
 			// Borrowed if carries bits over
 			let (alu_out, borrowed) = rn.overflowing_sub(operand as u32);
 			// Overflow is sign changes
-			let overflow = rn.view_bits::<Lsb0>()[31] != operand.view_bits::<Lsb0>()[31] && rn.view_bits::<Lsb0>()[31] != alu_out.view_bits::<Lsb0>()[31];
+			let (_, overflow) = (rn as i32).overflowing_sub(operand as i32);
 
 			cpu.set_register_value(rd_index, alu_out);
 
@@ -35,7 +35,7 @@ pub fn operate_thumb(instruction: u16, cpu: &mut CPU, bus: &mut SystemBus) {
 			// Borrowed if carries bits over
 			let (alu_out, borrowed) = rn.overflowing_add(operand as u32);
 			// Overflow is sign changes
-			let overflow = rn.view_bits::<Lsb0>()[31] == operand.view_bits::<Lsb0>()[31] && rn.view_bits::<Lsb0>()[31] != alu_out.view_bits::<Lsb0>()[31];
+			let (_, overflow) = (rn as i32).overflowing_add(operand as i32);
 
 			cpu.set_register_value(rd_index, alu_out);
 
@@ -119,7 +119,7 @@ pub fn operate_thumb(instruction: u16, cpu: &mut CPU, bus: &mut SystemBus) {
 				// Borrowed if carries bits over
 				let (alu_out, borrowed) = rd.overflowing_sub(operand);
 				// Overflow is sign changes
-				let overflow = rd.view_bits::<Lsb0>()[31] != operand.view_bits::<Lsb0>()[31] && rd.view_bits::<Lsb0>()[31] != alu_out.view_bits::<Lsb0>()[31];
+				let (_, overflow) = (rd as i32).overflowing_sub(operand as i32);
 
 				cpu.get_mut_cpsr().set_n((alu_out & 0x8000_0000) != 0);
 				cpu.get_mut_cpsr().set_z(alu_out == 0);
@@ -131,7 +131,7 @@ pub fn operate_thumb(instruction: u16, cpu: &mut CPU, bus: &mut SystemBus) {
 				// Borrowed if carries bits over
 				let (alu_out, borrowed) = rd.overflowing_add(operand);
 				// Overflow is sign changes
-				let overflow = rd.view_bits::<Lsb0>()[31] == operand.view_bits::<Lsb0>()[31] && rd.view_bits::<Lsb0>()[31] != alu_out.view_bits::<Lsb0>()[31];
+				let (_, overflow) = (rd as i32).overflowing_add(operand as i32);
 
 				cpu.set_register_value(rd_index, alu_out);
 
@@ -145,7 +145,7 @@ pub fn operate_thumb(instruction: u16, cpu: &mut CPU, bus: &mut SystemBus) {
 				// Borrowed if carries bits over
 				let (alu_out, borrowed) = rd.overflowing_sub(operand);
 				// Overflow is sign changes
-				let overflow = rd.view_bits::<Lsb0>()[31] != operand.view_bits::<Lsb0>()[31] && rd.view_bits::<Lsb0>()[31] != alu_out.view_bits::<Lsb0>()[31];
+				let (_, overflow) = (rd as i32).overflowing_sub(operand as i32);
 
 				cpu.set_register_value(rd_index, alu_out);
 
@@ -261,8 +261,9 @@ pub fn operate_thumb(instruction: u16, cpu: &mut CPU, bus: &mut SystemBus) {
 				let borrowed = borrowed_first || borrowed_second;
 
 				// Overflow if sign changes
-				let overflow = (rd.view_bits::<Lsb0>()[31] == rm.view_bits::<Lsb0>()[31] && rd.view_bits::<Lsb0>()[31] != alu_out_first.view_bits::<Lsb0>()[31])
-					|| (!alu_out_first.view_bits::<Lsb0>()[31] && alu_out.view_bits::<Lsb0>()[31]);
+				let (_, overflow_first) = (rd as i32).overflowing_add(rm as i32);
+				let (_, overflow_second) = (alu_out_first as i32).overflowing_add(c as i32);
+				let overflow = overflow_first || overflow_second;
 
 				cpu.set_register_value(rd_index, alu_out);
 
@@ -280,8 +281,9 @@ pub fn operate_thumb(instruction: u16, cpu: &mut CPU, bus: &mut SystemBus) {
 				let borrowed = borrowed_first || borrowed_second;
 
 				// Overflow if sign changes
-				let overflow = (rd.view_bits::<Lsb0>()[31] != rm.view_bits::<Lsb0>()[31] && rd.view_bits::<Lsb0>()[31] != alu_out_first.view_bits::<Lsb0>()[31])
-					|| (alu_out_first.view_bits::<Lsb0>()[31] && !alu_out.view_bits::<Lsb0>()[31]);
+				let (_, overflow_first) = (rd as i32).overflowing_sub(rm as i32);
+				let (_, overflow_second) = (alu_out_first as i32).overflowing_sub(c as i32);
+				let overflow = overflow_first || overflow_second;
 
 				cpu.set_register_value(rd_index, alu_out);
 
@@ -336,7 +338,7 @@ pub fn operate_thumb(instruction: u16, cpu: &mut CPU, bus: &mut SystemBus) {
 				// Borrowed if carries bits over
 				let (alu_out, borrowed) = rd.overflowing_sub(rm);
 				// Overflow is sign changes
-				let overflow = rd.view_bits::<Lsb0>()[31] != rm.view_bits::<Lsb0>()[31] && rd.view_bits::<Lsb0>()[31] != alu_out.view_bits::<Lsb0>()[31];
+				let (_, overflow) = (rd as i32).overflowing_sub(rm as i32);
 
 				cpu.get_mut_cpsr().set_n((alu_out & 0x8000_0000) != 0);
 				cpu.get_mut_cpsr().set_z(alu_out == 0);
@@ -348,7 +350,7 @@ pub fn operate_thumb(instruction: u16, cpu: &mut CPU, bus: &mut SystemBus) {
 				// Borrowed if carries bits over
 				let (alu_out, borrowed) = rd.overflowing_add(rm);
 				// Overflow is sign changes
-				let overflow = rd.view_bits::<Lsb0>()[31] == rm.view_bits::<Lsb0>()[31] && rd.view_bits::<Lsb0>()[31] != alu_out.view_bits::<Lsb0>()[31];
+				let (_, overflow) = (rd as i32).overflowing_add(rm as i32);
 
 				cpu.get_mut_cpsr().set_n((alu_out & 0x8000_0000) != 0);
 				cpu.get_mut_cpsr().set_z(alu_out == 0);
@@ -413,7 +415,7 @@ pub fn operate_thumb(instruction: u16, cpu: &mut CPU, bus: &mut SystemBus) {
 				// Borrowed if carries bits over
 				let (alu_out, borrowed) = rd.overflowing_sub(rm);
 				// Overflow is sign changes
-				let overflow = rd.view_bits::<Lsb0>()[31] != rm.view_bits::<Lsb0>()[31] && rd.view_bits::<Lsb0>()[31] != alu_out.view_bits::<Lsb0>()[31];
+				let (_, overflow) = (rd as i32).overflowing_sub(rm as i32);
 
 				cpu.get_mut_cpsr().set_n((alu_out & 0x8000_0000) != 0);
 				cpu.get_mut_cpsr().set_z(alu_out == 0);
