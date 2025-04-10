@@ -393,7 +393,7 @@ impl PPU {
 	}
 
 	pub fn render(&mut self) -> Vec<f32> {
-		let mut pixels;
+		let mut pixels: Vec<f32>;
 		if !self.get_disp_cnt().get_forced_blank() {
 			let backdrop_color = Color::new(self.read_16(PALETTE_RAM_ADDR as u32));
 			pixels = [backdrop_color.get_red(), backdrop_color.get_green(), backdrop_color.get_blue()]
@@ -443,8 +443,8 @@ impl PPU {
 
 												let tx = pixel_x / 8;
 												let ty = pixel_y / 8;
-												let tile = tx + ty * bg_tiles;
-												let tile_number = self.vram[bg_cnt.get_map_data_address() + tile as usize] as usize;
+												let tile = (tx + ty * bg_tiles) as usize;
+												let tile_number = self.vram[bg_cnt.get_map_data_address() + tile] as usize;
 
 												let tile_pixel = ((pixel_x % 8) + (pixel_y % 8) * 8) as usize;
 												let tile_address = bg_cnt.get_tile_data_address() + (tile_number * 64);
@@ -509,7 +509,7 @@ impl PPU {
 
 												if palette_entry != 0 {
 													let palette_offset = bg_map[12..16].load_le::<u32>() * 16;
-													let palette_index = palette_entry & (0xff << ((tile_pixel as u32 & 1) * 8));
+													let palette_index = (palette_entry >> ((tile_pixel as u32 & 1) * 4)) & 0xf;
 													let color_address = PALETTE_RAM_ADDR as u32 + (palette_offset + palette_index) * 2;
 													let color = Color::new(self.read_16(color_address));
 

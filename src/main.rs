@@ -37,7 +37,7 @@ fn main() {
 	File::open("data/bios.gba").expect("Bios couldn't be opened!").read_to_end(&mut bios_data).unwrap();
 
 	let mut cartridge_data = Vec::<u8>::new();
-	if File::open("data/demos/sbb_reg.gba")
+	if File::open("data/demos/sbb_aff.gba")
 		.expect("Cartridge couldn't be opened!")
 		.read_to_end(&mut cartridge_data)
 		.is_ok()
@@ -97,6 +97,8 @@ fn main() {
 					last_frame = Instant::now();
 				}
 				Event::MainEventsCleared => {
+					// NOTE: Poll key input!
+
 					// NOTE: Advance GBA by one frame
 					const CYCLES_PER_FRAME: u32 = 280_896;
 					if !debug_mode || execute_step {
@@ -116,19 +118,19 @@ fn main() {
 									&& bus.io_regs.get_ime() && bus.io_regs.get_ie().get_v_counter_match()
 									&& bus.ppu.get_disp_stat().get_v_counter_irq()
 								{
-									bus.io_regs.get_if().set_v_counter_match(true);
+									bus.io_regs.get_mut_if().set_v_counter_match(true);
 									cpu.exception(crate::arm7tdmi::EExceptionType::Irq);
 									bus.io_regs.halted = false;
 								}
 
 								// H-Blank
 								if h_blank_irq && bus.io_regs.get_ime() && bus.io_regs.get_ie().get_h_blank() && bus.ppu.get_disp_stat().get_h_blank_irq() {
-									bus.io_regs.get_if().set_h_blank(true);
+									bus.io_regs.get_mut_if().set_h_blank(true);
 									cpu.exception(crate::arm7tdmi::EExceptionType::Irq);
 									bus.io_regs.halted = false;
 								} else if v_blank_irq && bus.io_regs.get_ime() && bus.io_regs.get_ie().get_v_blank() && bus.ppu.get_disp_stat().get_v_blank_irq() {
 									// V-Blank
-									bus.io_regs.get_if().set_v_blank(true);
+									bus.io_regs.get_mut_if().set_v_blank(true);
 									cpu.exception(crate::arm7tdmi::EExceptionType::Irq);
 									bus.io_regs.halted = false;
 								}
@@ -385,10 +387,31 @@ fn main() {
 					renderer.render(&mut target, draw_data).expect("Rendering failed");
 					target.finish().expect("Failed to swap buffers");
 				}
-				Event::WindowEvent {
-					event: WindowEvent::CloseRequested,
-					..
-				} => *control_flow = ControlFlow::Exit,
+				Event::WindowEvent { event, .. } => match event {
+					WindowEvent::Resized(_) => {}
+					WindowEvent::Moved(_) => {}
+					WindowEvent::CloseRequested => *control_flow = ControlFlow::Exit,
+					WindowEvent::Destroyed => {}
+					WindowEvent::DroppedFile(_) => {}
+					WindowEvent::HoveredFile(_) => {}
+					WindowEvent::HoveredFileCancelled => {}
+					WindowEvent::ReceivedCharacter(_) => {}
+					WindowEvent::Focused(_) => {}
+					WindowEvent::KeyboardInput { input, .. } => match input.scancode {
+						 => {}
+					},
+					WindowEvent::ModifiersChanged(_) => {}
+					WindowEvent::CursorMoved { .. } => {}
+					WindowEvent::CursorEntered { .. } => {}
+					WindowEvent::CursorLeft { .. } => {}
+					WindowEvent::MouseWheel { .. } => {}
+					WindowEvent::MouseInput { .. } => {}
+					WindowEvent::TouchpadPressure { .. } => {}
+					WindowEvent::AxisMotion { .. } => {}
+					WindowEvent::Touch(_) => {}
+					WindowEvent::ScaleFactorChanged { .. } => {}
+					WindowEvent::ThemeChanged(_) => {}
+				},
 				event => {
 					let gl_window = display.gl_window();
 					platform.handle_event(imgui.io_mut(), gl_window.window(), &event);
