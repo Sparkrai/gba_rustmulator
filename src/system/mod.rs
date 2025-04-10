@@ -97,10 +97,11 @@ impl MemoryInterface for SystemBus {
 			}
 			PALETTE_RAM_ADDR | VRAM_ADDR | OAM_ADDR => self.ppu.read_8(address),
 			CARTRIDGE_WS0_LO | CARTRIDGE_WS0_HI | CARTRIDGE_WS1_LO | CARTRIDGE_WS1_HI | CARTRIDGE_WS2_LO | CARTRIDGE_WS2_HI => {
-				if self.cartridge_rom.len() == 0 {
-					((address / 2) & 0xffff) as u8
+				let addr = address as usize & 0xff_ffff;
+				if self.cartridge_rom.len() > addr {
+					self.cartridge_rom[addr]
 				} else {
-					self.cartridge_rom[(address & 0xff_ffff) as usize]
+					((address / 2) & 0xffff) as u8
 				}
 			}
 			CARTRIDGE_SRAM_LO => self.cartridge_sram[(address & 0xffff) as usize],
@@ -121,8 +122,9 @@ impl MemoryInterface for SystemBus {
 			}
 			PALETTE_RAM_ADDR | VRAM_ADDR | OAM_ADDR => self.ppu.write_8(address, value),
 			CARTRIDGE_WS0_LO | CARTRIDGE_WS0_HI | CARTRIDGE_WS1_LO | CARTRIDGE_WS1_HI | CARTRIDGE_WS2_LO | CARTRIDGE_WS2_HI => {
-				if self.cartridge_rom.len() > 0 {
-					self.cartridge_rom[(address & 0xff_ffff) as usize] = value
+				let addr = address as usize & 0xff_ffff;
+				if self.cartridge_rom.len() > addr {
+					self.cartridge_rom[addr] = value
 				}
 			}
 			CARTRIDGE_SRAM_LO => self.cartridge_sram[(address & 0xffff) as usize] = value,
@@ -152,10 +154,11 @@ impl MemoryInterface for SystemBus {
 				}
 				PALETTE_RAM_ADDR | VRAM_ADDR | OAM_ADDR => self.ppu.read_16(address),
 				CARTRIDGE_WS0_LO | CARTRIDGE_WS0_HI | CARTRIDGE_WS1_LO | CARTRIDGE_WS1_HI | CARTRIDGE_WS2_LO | CARTRIDGE_WS2_HI => {
-					if self.cartridge_rom.len() == 0 {
-						((address / 2) & 0xffff) as u16
+					let addr = address as usize & 0xff_ffff;
+					if self.cartridge_rom.len() > addr {
+						*(self.cartridge_rom.as_ptr().add(addr) as *mut u16) as u16
 					} else {
-						*(self.cartridge_rom.as_ptr().offset((address & 0xff_ffff) as isize) as *mut u16) as u16
+						((address / 2) & 0xffff) as u16
 					}
 				}
 				CARTRIDGE_SRAM_LO => *(self.cartridge_sram.as_ptr().offset((address & 0xffff) as isize) as *mut u16) as u16,
@@ -178,8 +181,9 @@ impl MemoryInterface for SystemBus {
 				}
 				PALETTE_RAM_ADDR | VRAM_ADDR | OAM_ADDR => self.ppu.write_16(address, value),
 				CARTRIDGE_WS0_LO | CARTRIDGE_WS0_HI | CARTRIDGE_WS1_LO | CARTRIDGE_WS1_HI | CARTRIDGE_WS2_LO | CARTRIDGE_WS2_HI => {
-					if self.cartridge_rom.len() > 0 {
-						*(self.cartridge_rom.as_ptr().offset((address & 0xff_ffff) as isize) as *mut u16) = value
+					let addr = address as usize & 0xff_ffff;
+					if self.cartridge_rom.len() > addr {
+						*(self.cartridge_rom.as_ptr().add(addr) as *mut u16) = value
 					}
 				}
 				CARTRIDGE_SRAM_LO => *(self.cartridge_sram.as_ptr().offset((address & 0xffff) as isize) as *mut u16) = value,
@@ -210,10 +214,11 @@ impl MemoryInterface for SystemBus {
 				}
 				PALETTE_RAM_ADDR | VRAM_ADDR | OAM_ADDR => self.ppu.read_32(address),
 				CARTRIDGE_WS0_LO | CARTRIDGE_WS0_HI | CARTRIDGE_WS1_LO | CARTRIDGE_WS1_HI | CARTRIDGE_WS2_LO | CARTRIDGE_WS2_HI => {
-					if self.cartridge_rom.len() == 0 {
-						(address / 2) & 0xffff
+					let addr = address as usize & 0xff_ffff;
+					if self.cartridge_rom.len() > addr {
+						*(self.cartridge_rom.as_ptr().add(addr) as *mut u32) as u32
 					} else {
-						*(self.cartridge_rom.as_ptr().offset((address & 0xff_ffff) as isize) as *mut u32) as u32
+						(address / 2) & 0xffff
 					}
 				}
 				CARTRIDGE_SRAM_LO => *(self.cartridge_sram.as_ptr().offset((address & 0xffff) as isize) as *mut u32) as u32,
@@ -236,8 +241,9 @@ impl MemoryInterface for SystemBus {
 				}
 				PALETTE_RAM_ADDR | VRAM_ADDR | OAM_ADDR => self.ppu.write_32(address, value),
 				CARTRIDGE_WS0_LO | CARTRIDGE_WS0_HI | CARTRIDGE_WS1_LO | CARTRIDGE_WS1_HI | CARTRIDGE_WS2_LO | CARTRIDGE_WS2_HI => {
-					if self.cartridge_rom.len() > 0 {
-						*(self.cartridge_rom.as_ptr().offset((address & 0xff_ffff) as isize) as *mut u32) = value
+					let addr = address as usize & 0xff_ffff;
+					if self.cartridge_rom.len() > addr {
+						*(self.cartridge_rom.as_ptr().add(addr) as *mut u32) = value
 					}
 				}
 				CARTRIDGE_SRAM_LO => *(self.cartridge_sram.as_ptr().offset((address & 0xffff) as isize) as *mut u32) = value,

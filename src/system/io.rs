@@ -269,10 +269,18 @@ impl MemoryInterface for IORegisters {
 	fn write_8(&mut self, address: u32, value: u8) {
 		let addr = if address & 0xffff == 0x8000 { 0x800 } else { address & 0x00ff_ffff };
 		if addr <= IO_REGISTERS_END {
-			self.registers[addr as usize] = value;
-
-			if addr == HALTCNT_ADDRESS as u32 {
-				self.halted = true;
+			if IF_RANGE.contains(&(addr as usize)) {
+				let current_if = self.get_if().0.load_le::<u16>();
+				if IF_RANGE.start == addr as usize {
+					self.get_if().0.store_le::<u16>(!value as u16 & current_if);
+				} else {
+					self.get_if().0.store_le::<u16>(!((value as u16) << 8) & current_if);
+				}
+			} else {
+				self.registers[addr as usize] = value;
+				if addr == HALTCNT_ADDRESS as u32 {
+					self.halted = true;
+				}
 			}
 		}
 	}
@@ -291,12 +299,17 @@ impl MemoryInterface for IORegisters {
 	fn write_16(&mut self, address: u32, value: u16) {
 		let addr = if address & 0xffff == 0x8000 { 0x800 } else { address & 0x00ff_ffff };
 		if addr <= IO_REGISTERS_END {
-			unsafe {
-				*(self.registers.as_ptr().add(addr as usize) as *mut u16) = value;
-			}
+			if IF_RANGE.contains(&(addr as usize)) {
+				let current_if = self.get_if().0.load_le::<u16>();
+				self.get_if().0.store_le::<u16>(!value & current_if);
+			} else {
+				unsafe {
+					*(self.registers.as_ptr().add(addr as usize) as *mut u16) = value;
+				}
 
-			if addr == HALTCNT_ADDRESS as u32 || addr + 1 == HALTCNT_ADDRESS as u32 {
-				self.halted = true;
+				if addr == HALTCNT_ADDRESS as u32 || addr + 1 == HALTCNT_ADDRESS as u32 {
+					self.halted = true;
+				}
 			}
 		}
 	}
@@ -315,12 +328,17 @@ impl MemoryInterface for IORegisters {
 	fn write_32(&mut self, address: u32, value: u32) {
 		let addr = if address & 0xffff == 0x8000 { 0x800 } else { address & 0x00ff_ffff };
 		if addr <= IO_REGISTERS_END {
-			unsafe {
-				*(self.registers.as_ptr().add(addr as usize) as *mut u32) = value;
-			}
+			if IF_RANGE.contains(&(addr as usize)) {
+				let current_if = self.get_if().0.load_le::<u16>();
+				self.get_if().0.store_le::<u16>(!value as u16 & current_if);
+			} else {
+				unsafe {
+					*(self.registers.as_ptr().add(addr as usize) as *mut u32) = value;
+				}
 
-			if HALTCNT_ADDRESS as u32 <= addr && addr + 3 >= HALTCNT_ADDRESS as u32 {
-				self.halted = true;
+				if HALTCNT_ADDRESS as u32 <= addr && addr + 3 >= HALTCNT_ADDRESS as u32 {
+					self.halted = true;
+				}
 			}
 		}
 	}

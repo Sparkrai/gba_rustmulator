@@ -70,7 +70,7 @@ pub fn operate_arm(cpu: &mut CPU, bus: &mut SystemBus, instruction: u32) {
 			match (0x01e0_0000 & instruction) >> 21 {
 				// MUL
 				0x0 => {
-					let alu_out = rm * rs;
+					let alu_out = rm.wrapping_mul(rs);
 					cpu.set_register_value(rd_index, alu_out);
 
 					if s {

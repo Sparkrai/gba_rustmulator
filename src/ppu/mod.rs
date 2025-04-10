@@ -2,11 +2,11 @@ use std::ops::Range;
 
 use bitvec::prelude::*;
 use num_derive::*;
+use num_traits::FromPrimitive;
 
 use crate::arm7tdmi::{sign_extend, Gba16BitRegister, Gba8BitSlice};
 use crate::system::MemoryInterface;
 use crate::system::{OAM_ADDR, PALETTE_RAM_ADDR, VRAM_ADDR};
-use num_traits::FromPrimitive;
 
 pub const PPU_REGISTERS_END: u32 = 0x56;
 pub const SCREEN_TOTAL_PIXELS: usize = 38400;
@@ -80,9 +80,9 @@ pub enum ESpriteMode {
 }
 
 pub struct Color {
-	red: u8,
-	green: u8,
-	blue: u8,
+	red: f32,
+	green: f32,
+	blue: f32,
 }
 
 impl Color {
@@ -91,22 +91,29 @@ impl Color {
 		let r = bits[0x0..=0x4].load_le::<u8>();
 		let g = bits[0x5..=0x9].load_le::<u8>();
 		let b = bits[0xa..=0xe].load_le::<u8>();
-		Self {
-			red: r | r << 5,
-			green: g | g << 5,
-			blue: b | b << 5,
-		}
+
+		// TODO: Gamma correction!!!
+		const LCD_GAMMA: f32 = 4.0;
+		const OUT_GAMMA: f32 = 2.2;
+		let lb = f32::powf(b as f32 / 31.0, LCD_GAMMA);
+		let lg = f32::powf(g as f32 / 31.0, LCD_GAMMA);
+		let lr = f32::powf(r as f32 / 31.0, LCD_GAMMA);
+		let red = f32::powf((0.0 * lb + 50.0 * lg + 255.0 * lr) / 255.0, 1.0 / OUT_GAMMA) * (0xffff * 255 / 280) as f32;
+		let green = f32::powf((30.0 * lb + 230.0 * lg + 10.0 * lr) / 255.0, 1.0 / OUT_GAMMA) * (0xffff * 255 / 280) as f32;
+		let blue = f32::powf((220.0 * lb + 10.0 * lg + 50.0 * lr) / 255.0, 1.0 / OUT_GAMMA) * (0xffff * 255 / 280) as f32;
+
+		Self { red, green, blue }
 	}
 
-	pub fn get_red(&self) -> u8 {
+	pub fn get_red(&self) -> f32 {
 		self.red
 	}
 
-	pub fn get_green(&self) -> u8 {
+	pub fn get_green(&self) -> f32 {
 		self.green
 	}
 
-	pub fn get_blue(&self) -> u8 {
+	pub fn get_blue(&self) -> f32 {
 		self.blue
 	}
 }
@@ -160,7 +167,7 @@ impl<'a> SpriteEntry<'a> {
 		self.0[0xd]
 	}
 
-	pub fn get_size(&self) -> (u8, u8) {
+	pub fn get_size(&self) -> (usize, usize) {
 		let value = self.0[0xe..0xf].load_le::<u8>() << 2 | self.0[0x1e..0x1f].load_le::<u8>();
 
 		match value {
@@ -457,8 +464,8 @@ impl PPU {
 		self.registers[BLD_Y_RANGE].view_bits::<Lsb0>()[0..=4].load_le()
 	}
 
-	pub fn render(&mut self) -> Vec<u8> {
-		let mut pixels = vec![u8::max_value(); SCREEN_TOTAL_PIXELS * 3];
+	pub fn render(&mut self) -> Vec<f32> {
+		let mut pixels = vec![1.0; SCREEN_TOTAL_PIXELS * 3];
 		if !self.get_disp_cnt().get_forced_blank() {
 			let video_mode = self.get_disp_cnt().get_bg_mode();
 
@@ -482,61 +489,71 @@ impl PPU {
 					let bg3_y = self.get_bg3_y().get_value();
 
 					// Backgrounds
-					for x in 0..240 {
-						for y in 0..160 {
-							// TODO: Use transform!!!
-							let pixel_offset = (bg3_x as usize + x) + (bg3_y as usize + y * bg3_tiles);
-							let tile = pixel_offset / 8;
-							let tile_number = self.vram[bg3_cnt.get_map_data_address() + tile] as usize;
-
-							let palette_color_index = (self.vram[bg3_cnt.get_tile_data_address() + (tile_number * 64) + (pixel_offset % 8)] * 2) as usize;
-							let color = Color::new((self.palette_ram[palette_color_index + 1] as u16) << 8 | self.palette_ram[palette_color_index] as u16);
-
-							let pixel_index = (y * 240 + x) * 3;
-							pixels[pixel_index] = color.get_red();
-							pixels[pixel_index + 1] = color.get_green();
-							pixels[pixel_index + 2] = color.get_blue();
-						}
-					}
+					//					for x in 0..240 {
+					//						for y in 0..160 {
+					//							// TODO: Use transform!!!
+					//							let pixel_offset = (bg3_x as usize + x) + (bg3_y as usize + y * bg3_tiles);
+					//							let tile = pixel_offset / 8;
+					//							let tile_number = self.vram[bg3_cnt.get_map_data_address() + tile] as usize;
+					//
+					//							let palette_color_index = (self.vram[bg3_cnt.get_tile_data_address() + (tile_number * 64) + (pixel_offset % 8)] * 2) as usize;
+					//							let color = Color::new((self.palette_ram[palette_color_index + 1] as u16) << 8 | self.palette_ram[palette_color_index] as u16);
+					//
+					//							let pixel_index = (y * 240 + x) * 3;
+					//							pixels[pixel_index] = color.get_red();
+					//							pixels[pixel_index + 1] = color.get_green();
+					//							pixels[pixel_index + 2] = color.get_blue();
+					//						}
+					//					}
 
 					// Reverse sprites for priority order (Sprite 0 = Front, Last Sprite = back)
 					let is_1d_mapping = self.get_disp_cnt().get_sprite_1d_mapping();
 					let sprites = self.oam.chunks_exact(8).map(|x| SpriteEntry::new(x.view_bits())).rev();
 					for sprite in sprites.filter(|s| s.get_is_affine() || s.get_is_virtual_double_sized()) {
 						let (width, height) = sprite.get_size();
+						let tiles_per_row = if sprite.get_is_256_palette() { 16 } else { 32 };
+						let tile_length = if sprite.get_is_256_palette() { 64 } else { 32 };
 						let start_tile_address = SPRITE_TILES_START_ADDRESS + sprite.get_tile_index() as usize * 32;
-						for x in 0..width {
-							for y in 0..height {
-								let pixel_x = sprite.get_x_coord() + x as i16;
-								let pixel_y = sprite.get_y_coord() + y as i8;
 
-								// Y has range -127/127 (within 160 vertical screen size)
-								if pixel_x >= 0 && pixel_y >= 0 && pixel_x < 240 {
-									let pixel_index = (pixel_x as usize + (pixel_y as usize * 240)) * 3;
+						for tx in 0..width / 8 {
+							for ty in 0..height / 8 {
+								let tile_address = if is_1d_mapping {
+									let tile = tx + ty * width / 8;
+									start_tile_address + tile * tile_length
+								} else {
+									let tile = tx + ty * tiles_per_row;
+									start_tile_address + tile * tile_length
+								};
 
-									let tile_pixel = (x + y * 8) as usize;
+								for x in 0..8 {
+									for y in 0..8 {
+										let tile_pixel = x + y * 8;
+										let palette_entry = (self.vram[tile_address + tile_pixel]) as usize;
 
-									let palette_color_index;
-									if is_1d_mapping {
-										palette_color_index = (self.vram[start_tile_address + tile_pixel]) as usize;
-									} else {
-										// TODO: 2D Mapping!!!
-										palette_color_index = 0;
+										if palette_entry != 0 {
+											let pixel_x = sprite.get_x_coord() + (x + tx * 8) as i16;
+											let pixel_y = sprite.get_y_coord() + (y + ty * 8) as i8;
+
+											// Y has range -127/127 (within 160 vertical screen size)
+											if pixel_x >= 0 && pixel_y >= 0 && pixel_x < 240 {
+												let pixel_index = (pixel_x as usize + (pixel_y as usize * 240)) * 3;
+
+												let color;
+												if sprite.get_is_256_palette() {
+													color =
+														Color::new((self.palette_ram[256 + palette_entry * 2 + 1] as u16) << 8 | self.palette_ram[256 + palette_entry * 2] as u16);
+												} else {
+													let palette_offset = sprite.get_palette_number() as usize * 16;
+													let color_address = 256 + (palette_offset + palette_entry) * 2;
+													color = Color::new((self.palette_ram[color_address + 1] as u16) << 8 | self.palette_ram[color_address] as u16);
+												}
+
+												pixels[pixel_index] = color.get_red();
+												pixels[pixel_index + 1] = color.get_green();
+												pixels[pixel_index + 2] = color.get_blue();
+											}
+										}
 									}
-
-									let color;
-									if sprite.get_is_256_palette() {
-										color =
-											Color::new((self.palette_ram[256 + palette_color_index * 2 + 1] as u16) << 8 | self.palette_ram[256 + palette_color_index * 2] as u16);
-									} else {
-										let palette_offset = sprite.get_palette_number() as usize * 16;
-										let color_address = 256 + (palette_offset + palette_color_index) * 2;
-										color = Color::new((self.palette_ram[color_address + 1] as u16) << 8 | self.palette_ram[color_address] as u16);
-									}
-
-									pixels[pixel_index] = color.get_red();
-									pixels[pixel_index + 1] = color.get_green();
-									pixels[pixel_index + 2] = color.get_blue();
 								}
 							}
 						}
