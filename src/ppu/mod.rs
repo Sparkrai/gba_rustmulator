@@ -17,6 +17,7 @@ pub const PALETTE_RAM_SIZE: usize = 1 * 1024;
 pub const VRAM_SIZE: usize = 96 * 1024;
 pub const OAM_SIZE: usize = 1 * 1024;
 
+// TODO: Add green swap
 pub const DISP_CNT_ADDRESS: u32 = 0x0;
 pub const DISP_STAT_ADDRESS: u32 = 0x4;
 pub const VCOUNT_ADDRESS: u32 = 0x6;
@@ -36,24 +37,30 @@ pub const BG2_PA_ADDRESS: u32 = 0x20;
 pub const BG2_PB_ADDRESS: u32 = 0x22;
 pub const BG2_PC_ADDRESS: u32 = 0x24;
 pub const BG2_PD_ADDRESS: u32 = 0x26;
-pub const BG2_X_ADDRESS: u32 = 0x28;
-pub const BG2_Y_ADDRESS: u32 = 0x2c;
+pub const BG2_X_LO_ADDRESS: u32 = 0x28;
+pub const BG2_X_HI_ADDRESS: u32 = 0x2a;
+pub const BG2_Y_LO_ADDRESS: u32 = 0x2c;
+pub const BG2_Y_HI_ADDRESS: u32 = 0x2e;
 pub const BG3_PA_ADDRESS: u32 = 0x30;
 pub const BG3_PB_ADDRESS: u32 = 0x32;
 pub const BG3_PC_ADDRESS: u32 = 0x34;
 pub const BG3_PD_ADDRESS: u32 = 0x36;
-pub const BG3_X_ADDRESS: u32 = 0x38;
-pub const BG3_Y_ADDRESS: u32 = 0x3c;
+pub const BG3_X_LO_ADDRESS: u32 = 0x38;
+pub const BG3_X_HI_ADDRESS: u32 = 0x3a;
+pub const BG3_Y_LO_ADDRESS: u32 = 0x3c;
+pub const BG3_Y_HI_ADDRESS: u32 = 0x3e;
 pub const WIN0_H_ADDRESS: u32 = 0x40;
 pub const WIN1_H_ADDRESS: u32 = 0x42;
 pub const WIN0_V_ADDRESS: u32 = 0x44;
 pub const WIN1_V_ADDRESS: u32 = 0x46;
 pub const WIN_IN_ADDRESS: u32 = 0x48;
 pub const WIN_OUT_ADDRESS: u32 = 0x4a;
-pub const MOSAIC_ADDRESS: u32 = 0x4c;
+pub const MOSAIC_LO_ADDRESS: u32 = 0x4c;
+pub const MOSAIC_HI_ADDRESS: u32 = 0x4e;
 pub const BLD_CNT_ADDRESS: u32 = 0x50;
 pub const BLD_ALPHA_ADDRESS: u32 = 0x52;
-pub const BLD_Y_ADDRESS: u32 = 0x54;
+pub const BLD_Y_LO_ADDRESS: u32 = 0x54;
+pub const BLD_Y_HI_ADDRESS: u32 = 0x56;
 
 #[derive(Debug, Copy, Clone, FromPrimitive, ToPrimitive, PartialEq)]
 pub enum EVideoMode {
@@ -265,11 +272,11 @@ impl PPU {
 			disp_cnt: DisplayControl::new(),
 			disp_stat: DisplayStatus::new(),
 			v_count: 0,
-			bg_controls: [BackgroundControl::new(); 4],
+			bg_controls: [BackgroundControl::new(), BackgroundControl::new(), BackgroundControl::new(), BackgroundControl::new()],
 			bg_hofs: [0; 4],
 			bg_vofs: [0; 4],
-			bg_affine_matrices: [BackgroundAffineMatrix::new(); 2],
-			win_dimensions: [WindowDimensions::new(); 2],
+			bg_affine_matrices: [BackgroundAffineMatrix::new(), BackgroundAffineMatrix::new()],
+			win_dimensions: [WindowDimensions::new(), WindowDimensions::new()],
 			win_in: WinIn::new(),
 			win_out: WinOut::new(),
 			mosaic: Mosaic::new(),
@@ -344,135 +351,130 @@ impl PPU {
 		self.bld_y[0..=4].load_le()
 	}
 
+	/// Calculate PPU status based on provided cycle
+	/// Returns (h_blank_irq, v_blank_irq)
+	pub fn step(&mut self, current_cycle: u32) -> (bool, bool) {
+		self.set_vcount((current_cycle / 1232) as u8);
+
+		if self.get_vcount() == self.get_disp_stat().get_v_count_trigger() {
+			self.disp_stat.set_v_counter_flag(true);
+		} else {
+			self.disp_stat.set_v_counter_flag(false);
+		}
+
+		if current_cycle % 280896 == 0 {
+			// V-Blank end
+			self.disp_stat.set_v_blank(false);
+		} else if current_cycle == 197120 {
+			// V-Blank
+			self.disp_stat.set_v_blank(true);
+			return (false, true);
+		} else if current_cycle % 1232 == 0 {
+			// H-Blank end
+			self.disp_stat.set_h_blank(false);
+		} else if current_cycle.wrapping_sub(960) % 1232 == 0 {
+			// H-Blank
+			self.disp_stat.set_h_blank(true);
+			return (true, false);
+		}
+
+		(false, false)
+	}
+
 	pub fn render(&mut self) -> Vec<f32> {
 		let mut pixels = vec![1.0; SCREEN_TOTAL_PIXELS * 3];
 		if !self.get_disp_cnt().get_forced_blank() {
 			if let Some(video_mode) = self.get_disp_cnt().get_bg_mode() {
 				match video_mode {
-					EVideoMode::Mode0 => {}
-					EVideoMode::Mode1 => {}
-					EVideoMode::Mode2 => {
-						//						let bg3_cnt = self.get_bg3_cnt();
-						//						let bg3_wraparound = bg3_cnt.get_overflow_wraparound();
-						//						let bg3_tiles = match bg3_cnt.get_size() {
-						//							0x0 => 16,
-						//							0x1 => 32,
-						//							0x2 => 64,
-						//							0x3 => 128,
-						//							_ => {
-						//								panic!("IMPOSSIBLE!")
-						//							}
-						//						};
-						//
-						//						let bg3_x = self.get_bg3_x().get_value();
-						//						let bg3_y = self.get_bg3_y().get_value();
-
-						// Backgrounds
-						//					for x in 0..240 {
-						//						for y in 0..160 {
-						//							// TODO: Use transform!!!
-						//							let pixel_offset = (bg3_x as usize + x) + (bg3_y as usize + y * bg3_tiles);
-						//							let tile = pixel_offset / 8;
-						//							let tile_number = self.vram[bg3_cnt.get_map_data_address() + tile] as usize;
-						//
-						//							let palette_color_index = (self.vram[bg3_cnt.get_tile_data_address() + (tile_number * 64) + (pixel_offset % 8)] * 2) as usize;
-						//							let color = Color::new((self.palette_ram[palette_color_index + 1] as u16) << 8 | self.palette_ram[palette_color_index] as u16);
-						//
-						//							let pixel_index = (y * 240 + x) * 3;
-						//							pixels[pixel_index] = color.get_red();
-						//							pixels[pixel_index + 1] = color.get_green();
-						//							pixels[pixel_index + 2] = color.get_blue();
-						//						}
-						//					}
-
-						if self.get_disp_cnt().get_screen_display_sprites() {
-							let is_1d_mapping = self.get_disp_cnt().get_sprite_1d_mapping();
-							// Reverse sprites for priority order (Sprite 0 = Front, Last Sprite = back)
-							let sprites = self.oam.chunks_exact(8).map(|x| SpriteEntry::new(x.view_bits())).rev();
-							for sprite in sprites.filter(|s| s.get_is_affine() || !s.get_is_virtual_double_sized()) {
-								let (width, height) = sprite.get_size();
-								let tiles_per_row = if sprite.get_is_256_palette() { 16 } else { 32 };
-								let tile_length = if sprite.get_is_256_palette() { 64 } else { 32 };
-								let start_tile_address = SPRITE_TILES_START_ADDRESS + sprite.get_tile_index() as usize * 32;
-
-								let pixel_x0 = (width / 2) as i32;
-								let pixel_y0 = (height / 2) as i32;
-
-								let half_width = if sprite.get_is_virtual_double_sized() { width as i32 } else { pixel_x0 };
-								let half_height = if sprite.get_is_virtual_double_sized() { height as i32 } else { pixel_y0 };
-
-								for y in -half_height..half_height {
-									for x in -half_width..half_width {
-										let pixel_x;
-										let pixel_y;
-										if sprite.get_is_affine() {
-											let affine_matrix_starting_address = sprite.get_affine_matrix_index() * 32;
-											let pa = FixedPoint16Bit::with_value(
-												self.oam[affine_matrix_starting_address + 0x6..=affine_matrix_starting_address + 0x7]
-													.view_bits::<Lsb0>()
-													.load_le(),
-											)
-											.get_value();
-											let pb = FixedPoint16Bit::with_value(
-												self.oam[affine_matrix_starting_address + 0xe..=affine_matrix_starting_address + 0xf]
-													.view_bits::<Lsb0>()
-													.load_le(),
-											)
-											.get_value();
-											let pc = FixedPoint16Bit::with_value(
-												self.oam[affine_matrix_starting_address + 0x16..=affine_matrix_starting_address + 0x17]
-													.view_bits::<Lsb0>()
-													.load_le(),
-											)
-											.get_value();
-											let pd = FixedPoint16Bit::with_value(
-												self.oam[affine_matrix_starting_address + 0x1e..=affine_matrix_starting_address + 0x1f]
-													.view_bits::<Lsb0>()
-													.load_le(),
-											)
-											.get_value();
-
-											pixel_x = pixel_x0 + ((pa * x + pb * y) >> 8);
-											pixel_y = pixel_y0 + ((pc * x + pd * y) >> 8);
-										} else {
-											pixel_x = pixel_x0 + x;
-											pixel_y = pixel_y0 + y;
+					EVideoMode::Mode0 | EVideoMode::Mode1 | EVideoMode::Mode2 => {
+						let start_index = if video_mode == EVideoMode::Mode2 { 2 } else { 0 };
+						let end_index = if video_mode == EVideoMode::Mode1 { 3 } else { 4 };
+						for i in start_index..end_index {
+							if self.disp_cnt.get_screen_display_bg(i) {
+								let bg_cnt = self.get_bg_cnt(i);
+								if i >= 2 && video_mode == EVideoMode::Mode1 || video_mode == EVideoMode::Mode2 {
+									let bg_tiles = match bg_cnt.get_size() {
+										0x0 => 16,
+										0x1 => 32,
+										0x2 => 64,
+										0x3 => 128,
+										_ => {
+											panic!("IMPOSSIBLE!")
 										}
+									};
 
-										// NOTE: These values wrap around
-										let screen_x = sprite.get_x_coord() + half_width + x;
-										let screen_y = sprite.get_y_coord() + half_height + y;
+									let bg_affine_matrix = self.get_bg_affine_matrix(i - 2);
 
-										// Y has range -127/127 (within 160 vertical screen size)
-										if screen_x >= 0
-											&& screen_y >= 0 && screen_x < 240 && screen_y < 160
-											&& pixel_x >= 0 && pixel_x < width as i32 && pixel_y >= 0
-											&& pixel_y < height as i32
-										{
+									for y in -80..80 {
+										for x in -120..120 {
+											let pixel_x = (bg_affine_matrix.get_pa().get_value() + bg_affine_matrix.get_pb().get_value() * y) >> 8;
+											let pixel_y = (bg_affine_matrix.get_pc().get_value() * x + bg_affine_matrix.get_pd().get_value() * y) >> 8;
+
+											// NOTE: These values wrap around
+											let screen_x = bg_affine_matrix.get_x().get_value() + 120 + x;
+											let screen_y = bg_affine_matrix.get_y().get_value() + 80 + y;
+
+											// Y has range -127/127 (within 160 vertical screen size)
+											if screen_x >= 0
+												&& screen_y >= 0 && screen_x < 240 && screen_y < 160
+												&& pixel_x >= 0 && pixel_x < bg_tiles * 8 && pixel_y >= 0
+												&& pixel_y < bg_tiles * 8
+											{
+												let pixel_index = (screen_x as usize + (screen_y as usize * 240)) * 3;
+
+												let tx = pixel_x as usize / 8;
+												let ty = pixel_y as usize / 8;
+												let tile = tx + ty * bg_tiles;
+												let tile_number = self.vram[(bg_cnt.get_map_data_address() + tile) * 0x800] as usize;
+
+												let tile_pixel = ((pixel_x % 8) + (pixel_y % 8) * 8) as usize;
+												let tile_address = (bg_cnt.get_tile_data_address() * 0x4000) + (tile_number * 64);
+												let palette_entry = self.vram[tile_address + tile_pixel] as u32;
+
+												if palette_entry != 0 {
+													let color = Color::new(self.read_16(PALETTE_RAM_ADDR as u32 + palette_entry * 2));
+
+													pixels[pixel_index] = color.get_red();
+													pixels[pixel_index + 1] = color.get_green();
+													pixels[pixel_index + 2] = color.get_blue();
+												}
+											}
+										}
+									}
+								} else {
+									let (width, height) = match bg_cnt.get_size() {
+										0x0 => (256, 256),
+										0x1 => (512, 256),
+										0x2 => (256, 512),
+										0x3 => (512, 512),
+										_ => {
+											panic!("IMPOSSIBLE!")
+										}
+									};
+
+									let bg_x = self.get_bg_hofs(i) as i32;
+									let bg_y = self.get_bg_vofs(i) as i32;
+
+									for screen_y in 0..160 {
+										for screen_x in 0..240 {
+											// NOTE: These values wrap around
+											let pixel_x = bg_x % width + screen_x;
+											let pixel_y = bg_y % height + screen_y;
+
 											let pixel_index = (screen_x as usize + (screen_y as usize * 240)) * 3;
 
 											let tx = pixel_x as usize / 8;
 											let ty = pixel_y as usize / 8;
-											let tile_address = if is_1d_mapping {
-												let tile = tx + ty * width / 8;
-												start_tile_address + tile * tile_length
-											} else {
-												let tile = tx + ty * tiles_per_row;
-												start_tile_address + tile * tile_length
-											};
+											let tile = tx + ty * 32;
+											let map = tx % 32 + ty * 32 + (tx / 32 + ty / 32 * ;
+											let tile_number = self.vram[(bg_cnt.get_map_data_address() + tile) * 0x800] as usize;
 
 											let tile_pixel = ((pixel_x % 8) + (pixel_y % 8) * 8) as usize;
-											let palette_entry = (self.vram[tile_address + tile_pixel]) as u32;
+											let tile_address = (bg_cnt.get_tile_data_address() * 0x4000) + (tile_number * 64);
+											let palette_entry = self.vram[tile_address + tile_pixel] as u32;
 
 											if palette_entry != 0 {
-												let color;
-												if sprite.get_is_256_palette() {
-													color = Color::new(self.read_16(PALETTE_RAM_ADDR as u32 + SPRITE_PALETTE_START_ADDRESS + palette_entry * 2));
-												} else {
-													let palette_offset = sprite.get_palette_number() as u32 * 16;
-													let color_address = PALETTE_RAM_ADDR as u32 + SPRITE_PALETTE_START_ADDRESS + (palette_offset + palette_entry) * 2;
-													color = Color::new(self.read_16(color_address));
-												}
+												let color = Color::new(self.read_16(PALETTE_RAM_ADDR as u32 + palette_entry * 2));
 
 												pixels[pixel_index] = color.get_red();
 												pixels[pixel_index + 1] = color.get_green();
@@ -503,6 +505,105 @@ impl PPU {
 						}
 					}
 					EVideoMode::Mode5 => {}
+				}
+
+				if self.get_disp_cnt().get_screen_display_sprites() {
+					let is_1d_mapping = self.get_disp_cnt().get_sprite_1d_mapping();
+					// Reverse sprites for priority order (Sprite 0 = Front, Last Sprite = back)
+					let sprites = self.oam.chunks_exact(8).map(|x| SpriteEntry::new(x.view_bits())).rev();
+					for sprite in sprites.filter(|s| s.get_is_affine() || !s.get_is_virtual_double_sized()) {
+						let (width, height) = sprite.get_size();
+						let tiles_per_row = if sprite.get_is_256_palette() { 16 } else { 32 };
+						let tile_length = if sprite.get_is_256_palette() { 64 } else { 32 };
+						let start_tile_address = SPRITE_TILES_START_ADDRESS + sprite.get_tile_index() as usize * 32;
+
+						let pixel_x0 = (width / 2) as i32;
+						let pixel_y0 = (height / 2) as i32;
+
+						let half_width = if sprite.get_is_virtual_double_sized() { width as i32 } else { pixel_x0 };
+						let half_height = if sprite.get_is_virtual_double_sized() { height as i32 } else { pixel_y0 };
+
+						for y in -half_height..half_height {
+							for x in -half_width..half_width {
+								let pixel_x;
+								let pixel_y;
+								if sprite.get_is_affine() {
+									let affine_matrix_starting_address = sprite.get_affine_matrix_index() * 32;
+									let pa = FixedPoint16Bit::with_value(
+										self.oam[affine_matrix_starting_address + 0x6..=affine_matrix_starting_address + 0x7]
+											.view_bits::<Lsb0>()
+											.load_le(),
+									)
+									.get_value();
+									let pb = FixedPoint16Bit::with_value(
+										self.oam[affine_matrix_starting_address + 0xe..=affine_matrix_starting_address + 0xf]
+											.view_bits::<Lsb0>()
+											.load_le(),
+									)
+									.get_value();
+									let pc = FixedPoint16Bit::with_value(
+										self.oam[affine_matrix_starting_address + 0x16..=affine_matrix_starting_address + 0x17]
+											.view_bits::<Lsb0>()
+											.load_le(),
+									)
+									.get_value();
+									let pd = FixedPoint16Bit::with_value(
+										self.oam[affine_matrix_starting_address + 0x1e..=affine_matrix_starting_address + 0x1f]
+											.view_bits::<Lsb0>()
+											.load_le(),
+									)
+									.get_value();
+
+									pixel_x = pixel_x0 + ((pa * x + pb * y) >> 8);
+									pixel_y = pixel_y0 + ((pc * x + pd * y) >> 8);
+								} else {
+									pixel_x = pixel_x0 + x;
+									pixel_y = pixel_y0 + y;
+								}
+
+								// NOTE: These values wrap around
+								let screen_x = sprite.get_x_coord() + half_width + x;
+								let screen_y = sprite.get_y_coord() + half_height + y;
+
+								// Y has range -127/127 (within 160 vertical screen size)
+								if screen_x >= 0
+									&& screen_y >= 0 && screen_x < 240 && screen_y < 160
+									&& pixel_x >= 0 && pixel_x < width as i32
+									&& pixel_y >= 0 && pixel_y < height as i32
+								{
+									let pixel_index = (screen_x as usize + (screen_y as usize * 240)) * 3;
+
+									let tx = pixel_x as usize / 8;
+									let ty = pixel_y as usize / 8;
+									let tile_address = if is_1d_mapping {
+										let tile = tx + ty * width / 8;
+										start_tile_address + tile * tile_length
+									} else {
+										let tile = tx + ty * tiles_per_row;
+										start_tile_address + tile * tile_length
+									};
+
+									let tile_pixel = ((pixel_x % 8) + (pixel_y % 8) * 8) as usize;
+									let palette_entry = (self.vram[tile_address + tile_pixel]) as u32;
+
+									if palette_entry != 0 {
+										let color;
+										if sprite.get_is_256_palette() {
+											color = Color::new(self.read_16(PALETTE_RAM_ADDR as u32 + SPRITE_PALETTE_START_ADDRESS + palette_entry * 2));
+										} else {
+											let palette_offset = sprite.get_palette_number() as u32 * 16;
+											let color_address = PALETTE_RAM_ADDR as u32 + SPRITE_PALETTE_START_ADDRESS + (palette_offset + palette_entry) * 2;
+											color = Color::new(self.read_16(color_address));
+										}
+
+										pixels[pixel_index] = color.get_red();
+										pixels[pixel_index + 1] = color.get_green();
+										pixels[pixel_index + 2] = color.get_blue();
+									}
+								}
+							}
+						}
+					}
 				}
 			}
 		}
@@ -540,6 +641,10 @@ impl DisplayControl {
 		self.data[7]
 	}
 
+	pub fn get_screen_display_bg(&self, index: usize) -> bool {
+		self.data[8 + index]
+	}
+
 	pub fn get_screen_display_bg0(&self) -> bool {
 		self.data[8]
 	}
@@ -573,97 +678,91 @@ impl DisplayControl {
 	}
 }
 
-impl IORegister<u16> for DisplayControl {
-	fn read(&self) -> u16 {
-		self.data.load_le()
-	}
-
-	fn write(&mut self, value: u16) {
-		self.data.store_le(value)
-	}
+pub struct DisplayStatus {
+	data: Gba16BitRegister,
 }
-
-pub struct DisplayStatus(Gba16BitRegister);
 
 impl DisplayStatus {
 	pub fn new() -> Self {
-		Self { 0: Gba16BitRegister::zeroed() }
+		Self { data: Gba16BitRegister::zeroed() }
 	}
 
 	pub fn get_v_blank(&self) -> bool {
-		self.0[0]
+		self.data[0]
 	}
 
 	pub fn set_v_blank(&mut self, value: bool) {
-		self.0.set(0, value);
+		self.data.set(0, value);
 	}
 
 	pub fn get_h_blank(&self) -> bool {
-		self.0[1]
+		self.data[1]
 	}
 
 	pub fn set_h_blank(&mut self, value: bool) {
-		self.0.set(1, value);
+		self.data.set(1, value);
 	}
 
 	pub fn get_v_counter_flag(&self) -> bool {
-		self.0[2]
+		self.data[2]
 	}
 
 	pub fn set_v_counter_flag(&mut self, value: bool) {
-		self.0.set(2, value);
+		self.data.set(2, value);
 	}
 
 	pub fn get_v_blank_irq(&self) -> bool {
-		self.0[3]
+		self.data[3]
 	}
 
 	pub fn get_h_blank_irq(&self) -> bool {
-		self.0[4]
+		self.data[4]
 	}
 
 	pub fn get_v_counter_irq(&self) -> bool {
-		self.0[5]
+		self.data[5]
 	}
 
 	pub fn get_v_count_trigger(&self) -> u8 {
-		self.0[8..16].load_le()
+		self.data[8..16].load_le()
 	}
 }
 
-struct BackgroundControl(Gba16BitRegister);
+struct BackgroundControl {
+	data: Gba16BitRegister,
+}
 
 impl BackgroundControl {
 	pub fn new() -> Self {
-		Self { 0: Gba16BitRegister::zeroed() }
+		Self { data: Gba16BitRegister::zeroed() }
 	}
 
 	pub fn get_bg_priority(&self) -> u8 {
-		self.0[0..=1].load_le()
+		self.data[0..=1].load_le()
 	}
 
 	pub fn get_tile_data_address(&self) -> usize {
-		self.0[2..=3].load_le::<usize>() * 0x4000
+		self.data[2..=3].load_le::<usize>() * 0x4000
 	}
 
 	pub fn get_mosaic(&self) -> bool {
-		self.0[6]
+		self.data[6]
 	}
 
 	pub fn get_palette_type(&self) -> bool {
-		self.0[7]
+		self.data[7]
 	}
 
 	pub fn get_map_data_address(&self) -> usize {
-		self.0[8..=12].load_le::<usize>() * 0x800
+		self.data[8..=12].load_le::<usize>() * 0x800
 	}
 
 	pub fn get_overflow_wraparound(&self) -> bool {
-		self.0[13]
+		self.data[13]
 	}
 
 	pub fn get_size(&self) -> u8 {
-		self.0[14..=15].load_le()
+		self.data[14..=15].load_le()
 	}
 }
 
@@ -713,267 +812,281 @@ impl BackgroundAffineMatrix {
 	}
 }
 
-struct FixedPoint16Bit(Gba16BitRegister);
+struct FixedPoint16Bit {
+	data: Gba16BitRegister,
+}
 
 impl FixedPoint16Bit {
 	pub fn new() -> Self {
-		Self { 0: Gba16BitRegister::zeroed() }
+		Self { data: Gba16BitRegister::zeroed() }
 	}
 
 	pub fn with_value(value: u16) -> Self {
 		Self {
-			0: Gba16BitRegister::new([value; 1]),
+			data: Gba16BitRegister::new([value; 1]),
 		}
 	}
 
 	pub fn get_fractional(&self) -> u8 {
-		self.0[0..=7].load_le()
+		self.data[0..=7].load_le()
 	}
 
 	pub fn get_integer(&self) -> i32 {
-		self.0[8..=0xf].load_le::<u8>() as i8 as i32
+		self.data[8..=0xf].load_le::<u8>() as i8 as i32
 	}
 
 	pub fn get_value(&self) -> i32 {
-		self.0.load_le::<u16>() as i16 as i32
+		self.data.load_le::<u16>() as i16 as i32
 	}
 }
 
-struct FixedPoint28Bit(Gba32BitRegister);
+struct FixedPoint28Bit {
+	data: Gba32BitRegister,
+}
 
 impl FixedPoint28Bit {
 	pub fn new() -> Self {
-		Self { 0: Gba32BitRegister::zeroed() }
+		Self { data: Gba32BitRegister::zeroed() }
 	}
 
 	pub fn with_value(value: u32) -> Self {
 		Self {
-			0: Gba32BitRegister::new([value; 1]),
+			data: Gba32BitRegister::new([value; 1]),
 		}
 	}
 
 	pub fn get_fractional(&self) -> u8 {
-		self.0[0..=7].load_le()
+		self.data[0..=7].load_le()
 	}
 
 	pub fn get_integer(&self) -> i32 {
-		sign_extend(self.0[8..=27].load_le::<u32>(), 20)
+		sign_extend(self.data[8..=27].load_le::<u32>(), 20)
 	}
 
 	pub fn get_value(&self) -> i32 {
-		sign_extend(self.0[0..=27].load_le::<u32>(), 28)
+		sign_extend(self.data[0..=27].load_le::<u32>(), 28)
 	}
 }
 
-struct WinIn(Gba16BitRegister);
+struct WinIn {
+	data: Gba16BitRegister,
+}
 
 impl WinIn {
 	pub fn new() -> Self {
-		Self { 0: Gba16BitRegister::zeroed() }
+		Self { data: Gba16BitRegister::zeroed() }
 	}
 
 	pub fn get_win0_bg0_enabled(&self) -> bool {
-		self.0[0]
+		self.data[0]
 	}
 
 	pub fn get_win0_bg1_enabled(&self) -> bool {
-		self.0[1]
+		self.data[1]
 	}
 
 	pub fn get_win0_bg2_enabled(&self) -> bool {
-		self.0[2]
+		self.data[2]
 	}
 
 	pub fn get_win0_bg3_enabled(&self) -> bool {
-		self.0[3]
+		self.data[3]
 	}
 
 	pub fn get_win0_obj_enabled(&self) -> bool {
-		self.0[4]
+		self.data[4]
 	}
 
 	pub fn get_win0_blend_enabled(&self) -> bool {
-		self.0[5]
+		self.data[5]
 	}
 
 	pub fn get_win1_bg0_enabled(&self) -> bool {
-		self.0[8]
+		self.data[8]
 	}
 
 	pub fn get_win1_bg1_enabled(&self) -> bool {
-		self.0[9]
+		self.data[9]
 	}
 
 	pub fn get_win1_bg2_enabled(&self) -> bool {
-		self.0[10]
+		self.data[10]
 	}
 
 	pub fn get_win1_bg3_enabled(&self) -> bool {
-		self.0[11]
+		self.data[11]
 	}
 
 	pub fn get_win1_obj_enabled(&self) -> bool {
-		self.0[12]
+		self.data[12]
 	}
 
 	pub fn get_win1_blend_enabled(&self) -> bool {
-		self.0[13]
+		self.data[13]
 	}
 }
 
-struct WinOut(Gba16BitRegister);
+struct WinOut {
+	data: Gba16BitRegister,
+}
 
 impl WinOut {
 	pub fn new() -> Self {
-		Self { 0: Gba16BitRegister::zeroed() }
+		Self { data: Gba16BitRegister::zeroed() }
 	}
 
 	pub fn get_outside_bg0_enabled(&self) -> bool {
-		self.0[0]
+		self.data[0]
 	}
 
 	pub fn get_outside_bg1_enabled(&self) -> bool {
-		self.0[1]
+		self.data[1]
 	}
 
 	pub fn get_outside_bg2_enabled(&self) -> bool {
-		self.0[2]
+		self.data[2]
 	}
 
 	pub fn get_outside_bg3_enabled(&self) -> bool {
-		self.0[3]
+		self.data[3]
 	}
 
 	pub fn get_outside_obj_enabled(&self) -> bool {
-		self.0[4]
+		self.data[4]
 	}
 
 	pub fn get_outside_blend_enabled(&self) -> bool {
-		self.0[5]
+		self.data[5]
 	}
 
 	pub fn get_obj_win_bg0_enabled(&self) -> bool {
-		self.0[8]
+		self.data[8]
 	}
 
 	pub fn get_obj_win_bg1_enabled(&self) -> bool {
-		self.0[9]
+		self.data[9]
 	}
 
 	pub fn get_obj_win_bg2_enabled(&self) -> bool {
-		self.0[10]
+		self.data[10]
 	}
 
 	pub fn get_obj_win_bg3_enabled(&self) -> bool {
-		self.0[11]
+		self.data[11]
 	}
 
 	pub fn get_obj_win_obj_enabled(&self) -> bool {
-		self.0[12]
+		self.data[12]
 	}
 
 	pub fn get_obj_win_blend_enabled(&self) -> bool {
-		self.0[13]
+		self.data[13]
 	}
 }
 
-struct Mosaic(Gba16BitRegister);
+struct Mosaic {
+	data: Gba16BitRegister,
+}
 
 impl Mosaic {
 	pub fn new() -> Self {
-		Self { 0: Gba16BitRegister::zeroed() }
+		Self { data: Gba16BitRegister::zeroed() }
 	}
 
 	pub fn get_bg_x_size(&self) -> u8 {
-		self.0[0..4].load_le()
+		self.data[0..4].load_le()
 	}
 
 	pub fn get_bg_y_size(&self) -> u8 {
-		self.0[4..8].load_le()
+		self.data[4..8].load_le()
 	}
 
 	pub fn get_obj_x_size(&self) -> u8 {
-		self.0[8..12].load_le()
+		self.data[8..12].load_le()
 	}
 
 	pub fn get_obj_y_size(&self) -> u8 {
-		self.0[12..16].load_le()
+		self.data[12..16].load_le()
 	}
 }
 
-struct BlendControl(Gba16BitRegister);
+struct BlendControl {
+	data: Gba16BitRegister,
+}
 
 impl BlendControl {
 	pub fn new() -> Self {
-		Self { 0: Gba16BitRegister::zeroed() }
+		Self { data: Gba16BitRegister::zeroed() }
 	}
 
 	pub fn get_blend_bg0_source(&self) -> bool {
-		self.0[0]
+		self.data[0]
 	}
 
 	pub fn get_blend_bg1_source(&self) -> bool {
-		self.0[1]
+		self.data[1]
 	}
 
 	pub fn get_blend_bg2_source(&self) -> bool {
-		self.0[2]
+		self.data[2]
 	}
 
 	pub fn get_blend_bg3_source(&self) -> bool {
-		self.0[3]
+		self.data[3]
 	}
 
 	pub fn get_blend_obj_source(&self) -> bool {
-		self.0[4]
+		self.data[4]
 	}
 
 	pub fn get_blend_backdrop_source(&self) -> bool {
-		self.0[5]
+		self.data[5]
 	}
 
 	pub fn get_blend_mode(&self) -> EBlendMode {
-		FromPrimitive::from_u8(self.0[6..=7].load_le()).unwrap()
+		FromPrimitive::from_u8(self.data[6..=7].load_le()).unwrap()
 	}
 
 	pub fn get_blend_bg0_target(&self) -> bool {
-		self.0[8]
+		self.data[8]
 	}
 
 	pub fn get_blend_bg1_target(&self) -> bool {
-		self.0[9]
+		self.data[9]
 	}
 
 	pub fn get_blend_bg2_target(&self) -> bool {
-		self.0[10]
+		self.data[10]
 	}
 
 	pub fn get_blend_bg3_target(&self) -> bool {
-		self.0[11]
+		self.data[11]
 	}
 
 	pub fn get_blend_obj_target(&self) -> bool {
-		self.0[12]
+		self.data[12]
 	}
 
 	pub fn get_blend_backdrop_target(&self) -> bool {
-		self.0[13]
+		self.data[13]
 	}
 }
 
-struct BlendAlpha(Gba16BitRegister);
+struct BlendAlpha {
+	data: Gba16BitRegister,
+}
 
 impl BlendAlpha {
 	pub fn new() -> Self {
-		Self { 0: Gba16BitRegister::zeroed() }
+		Self { data: Gba16BitRegister::zeroed() }
 	}
 
 	pub fn get_alpha_a(&self) -> u8 {
-		self.0[0..=4].load_le()
+		self.data[0..=4].load_le()
 	}
 
 	pub fn get_alpha_b(&self) -> u8 {
-		self.0[8..=12].load_le()
+		self.data[8..=12].load_le()
 	}
 }
 
@@ -981,46 +1094,21 @@ impl MemoryInterface for PPU {
 	fn read_8(&self, address: u32) -> u8 {
 		match address & 0xff00_0000 {
 			crate::system::IO_ADDR => {
-				let addr = (address & PPU_REGISTERS_END);
-				let shift = (addr & 0x1) * 8;
-				match addr {
-					DISP_CNT_ADDRESS => (self.disp_cnt.read() >> shift) as u8,
-					DISP_STAT_ADDRESS => 0,
-					VCOUNT_ADDRESS => 0,
-					BG0_CNT_ADDRESS => 0,
-					BG1_CNT_ADDRESS => 0,
-					BG2_CNT_ADDRESS => 0,
-					BG3_CNT_ADDRESS => 0,
-					BG0_HOFS_ADDRESS => 0,
-					BG0_VOFS_ADDRESS => 0,
-					BG1_HOFS_ADDRESS => 0,
-					BG1_VOFS_ADDRESS => 0,
-					BG2_HOFS_ADDRESS => 0,
-					BG2_VOFS_ADDRESS => 0,
-					BG3_HOFS_ADDRESS => 0,
-					BG3_VOFS_ADDRESS => 0,
-					BG2_PA_ADDRESS => 0,
-					BG2_PB_ADDRESS => 0,
-					BG2_PC_ADDRESS => 0,
-					BG2_PD_ADDRESS => 0,
-					BG2_X_ADDRESS => 0,
-					BG2_Y_ADDRESS => 0,
-					BG3_PA_ADDRESS => 0,
-					BG3_PB_ADDRESS => 0,
-					BG3_PC_ADDRESS => 0,
-					BG3_PD_ADDRESS => 0,
-					BG3_X_ADDRESS => 0,
-					BG3_Y_ADDRESS => 0,
-					WIN0_H_ADDRESS => 0,
-					WIN1_H_ADDRESS => 0,
-					WIN0_V_ADDRESS => 0,
-					WIN1_V_ADDRESS => 0,
-					WIN_IN_ADDRESS => 0,
-					WIN_OUT_ADDRESS => 0,
-					MOSAIC_ADDRESS => 0,
-					BLD_CNT_ADDRESS => 0,
-					BLD_ALPHA_ADDRESS => 0,
-					BLD_Y_ADDRESS => 0,
+				let addr = address & PPU_REGISTERS_END;
+				let shift16 = (addr as usize & 0x1) * 8;
+				let shift32 = (addr as usize & 0x3) * 8;
+				match addr & !0x1 {
+					DISP_CNT_ADDRESS => self.disp_cnt.data[shift16..shift16 + 8].load_le(),
+					DISP_STAT_ADDRESS => self.disp_stat.data[shift16..shift16 + 8].load_le(),
+					VCOUNT_ADDRESS => self.v_count >> shift16, // 0 if addressing the upper bits
+					BG0_CNT_ADDRESS => self.bg_controls[0].data[shift16..shift16 + 8].load_le(),
+					BG1_CNT_ADDRESS => self.bg_controls[1].data[shift16..shift16 + 8].load_le(),
+					BG2_CNT_ADDRESS => self.bg_controls[2].data[shift16..shift16 + 8].load_le(),
+					BG3_CNT_ADDRESS => self.bg_controls[3].data[shift16..shift16 + 8].load_le(),
+					WIN_IN_ADDRESS => self.win_in.data[shift16..shift16 + 8].load_le(),
+					WIN_OUT_ADDRESS => self.win_out.data[shift16..shift16 + 8].load_le(),
+					BLD_CNT_ADDRESS => self.bld_cnt.data[shift16..shift16 + 8].load_le(),
+					BLD_ALPHA_ADDRESS => self.bld_alpha.data[shift16..shift16 + 8].load_le(),
 					_ => 0x0,
 				}
 			}
@@ -1034,54 +1122,59 @@ impl MemoryInterface for PPU {
 	fn write_8(&mut self, address: u32, value: u8) {
 		match address & 0xff00_0000 {
 			crate::system::IO_ADDR => {
-				let addr = (address & PPU_REGISTERS_END);
-				let shift = (addr & 0x1) * 8;
+				let addr = address & PPU_REGISTERS_END;
+				let shift16 = (addr as usize & 0x1) * 8;
+				let shift32 = (addr as usize & 0x3) * 8;
 				match addr & !0x1 {
-					DISP_CNT_ADDRESS => self.disp_cnt.write((value as u16) << shift),
-					DISP_STAT_ADDRESS => {}
+					DISP_CNT_ADDRESS => self.disp_cnt.data[shift16..shift16 + 8].store_le(value),
+					DISP_STAT_ADDRESS => self.disp_stat.data[shift16..shift16 + 8].store_le(value),
 					VCOUNT_ADDRESS => {}
-					BG0_CNT_ADDRESS => {}
-					BG1_CNT_ADDRESS => {}
-					BG2_CNT_ADDRESS => {}
-					BG3_CNT_ADDRESS => {}
-					BG0_HOFS_ADDRESS => {}
-					BG0_VOFS_ADDRESS => {}
-					BG1_HOFS_ADDRESS => {}
-					BG1_VOFS_ADDRESS => {}
-					BG2_HOFS_ADDRESS => {}
-					BG2_VOFS_ADDRESS => {}
-					BG3_HOFS_ADDRESS => {}
-					BG3_VOFS_ADDRESS => {}
-					BG2_PA_ADDRESS => {}
-					BG2_PB_ADDRESS => {}
-					BG2_PC_ADDRESS => {}
-					BG2_PD_ADDRESS => {}
-					BG2_X_ADDRESS => self.bg_affine_matrices[0].x.0.store_le::<u32>((value as u32) << shift),
-					BG2_Y_ADDRESS => {}
-					BG3_PA_ADDRESS => {}
-					BG3_PB_ADDRESS => {}
-					BG3_PC_ADDRESS => {}
-					BG3_PD_ADDRESS => {}
-					BG3_X_ADDRESS => {}
-					BG3_Y_ADDRESS => {}
-					WIN0_H_ADDRESS => {}
-					WIN1_H_ADDRESS => {}
-					WIN0_V_ADDRESS => {}
-					WIN1_V_ADDRESS => {}
-					WIN_IN_ADDRESS => {}
-					WIN_OUT_ADDRESS => {}
-					MOSAIC_ADDRESS => {}
-					BLD_CNT_ADDRESS => {}
-					BLD_ALPHA_ADDRESS => {}
-					BLD_Y_ADDRESS => {}
+					BG0_CNT_ADDRESS => self.bg_controls[0].data[shift16..shift16 + 8].store_le(value),
+					BG1_CNT_ADDRESS => self.bg_controls[1].data[shift16..shift16 + 8].store_le(value),
+					BG2_CNT_ADDRESS => self.bg_controls[2].data[shift16..shift16 + 8].store_le(value),
+					BG3_CNT_ADDRESS => self.bg_controls[3].data[shift16..shift16 + 8].store_le(value),
+					BG0_HOFS_ADDRESS => self.bg_hofs[0] = (value as u16) << shift16 | self.bg_hofs[0],
+					BG0_VOFS_ADDRESS => self.bg_vofs[0] = (value as u16) << shift16 | self.bg_vofs[0],
+					BG1_HOFS_ADDRESS => self.bg_hofs[1] = (value as u16) << shift16 | self.bg_hofs[1],
+					BG1_VOFS_ADDRESS => self.bg_vofs[1] = (value as u16) << shift16 | self.bg_vofs[1],
+					BG2_HOFS_ADDRESS => self.bg_hofs[2] = (value as u16) << shift16 | self.bg_hofs[2],
+					BG2_VOFS_ADDRESS => self.bg_vofs[2] = (value as u16) << shift16 | self.bg_vofs[2],
+					BG3_HOFS_ADDRESS => self.bg_hofs[3] = (value as u16) << shift16 | self.bg_hofs[3],
+					BG3_VOFS_ADDRESS => self.bg_vofs[3] = (value as u16) << shift16 | self.bg_vofs[3],
+					BG2_PA_ADDRESS => self.bg_affine_matrices[0].pa.data[shift16..shift16 + 8].store_le(value),
+					BG2_PB_ADDRESS => self.bg_affine_matrices[0].pb.data[shift16..shift16 + 8].store_le(value),
+					BG2_PC_ADDRESS => self.bg_affine_matrices[0].pa.data[shift16..shift16 + 8].store_le(value),
+					BG2_PD_ADDRESS => self.bg_affine_matrices[0].pd.data[shift16..shift16 + 8].store_le(value),
+					BG2_X_LO_ADDRESS => self.bg_affine_matrices[0].x.data[shift32..shift32 + 8].store_le(value),
+					BG2_X_HI_ADDRESS => self.bg_affine_matrices[0].x.data[shift32..shift32 + 8].store_le(value),
+					BG2_Y_LO_ADDRESS => self.bg_affine_matrices[0].y.data[shift32..shift32 + 8].store_le(value),
+					BG2_Y_HI_ADDRESS => self.bg_affine_matrices[0].y.data[shift32..shift32 + 8].store_le(value),
+					BG3_PA_ADDRESS => self.bg_affine_matrices[1].pa.data[shift16..shift16 + 8].store_le(value),
+					BG3_PB_ADDRESS => self.bg_affine_matrices[1].pb.data[shift16..shift16 + 8].store_le(value),
+					BG3_PC_ADDRESS => self.bg_affine_matrices[1].pc.data[shift16..shift16 + 8].store_le(value),
+					BG3_PD_ADDRESS => self.bg_affine_matrices[1].pd.data[shift16..shift16 + 8].store_le(value),
+					BG3_X_LO_ADDRESS => self.bg_affine_matrices[1].x.data[shift32..shift32 + 8].store_le(value),
+					BG3_X_HI_ADDRESS => self.bg_affine_matrices[1].x.data[shift32..shift32 + 8].store_le(value),
+					BG3_Y_LO_ADDRESS => self.bg_affine_matrices[1].y.data[shift32..shift32 + 8].store_le(value),
+					BG3_Y_HI_ADDRESS => self.bg_affine_matrices[1].y.data[shift32..shift32 + 8].store_le(value),
+					WIN0_H_ADDRESS => self.win_dimensions[0].h[shift16..shift16 + 8].store_le(value),
+					WIN1_H_ADDRESS => self.win_dimensions[1].h[shift16..shift16 + 8].store_le(value),
+					WIN0_V_ADDRESS => self.win_dimensions[0].v[shift16..shift16 + 8].store_le(value),
+					WIN1_V_ADDRESS => self.win_dimensions[1].v[shift16..shift16 + 8].store_le(value),
+					WIN_IN_ADDRESS => self.win_in.data[shift16..shift16 + 8].store_le(value),
+					WIN_OUT_ADDRESS => self.win_out.data[shift16..shift16 + 8].store_le(value),
+					MOSAIC_LO_ADDRESS => self.mosaic.data[shift16..shift16 + 8].store_le(value),
+					BLD_CNT_ADDRESS => self.bld_cnt.data[shift16..shift16 + 8].store_le(value),
+					BLD_ALPHA_ADDRESS => self.bld_alpha.data[shift16..shift16 + 8].store_le(value),
+					BLD_Y_LO_ADDRESS => self.bld_y[shift16..shift16 + 8].store_le(value),
 					_ => {}
 				}
 			}
+			// NOTE: Writes to BG (6000000h-600FFFFh) (or 6000000h-6013FFFh in Bitmap mode) and to Palette (5000000h-50003FFh) are writing the new 8bit value to BOTH upper and lower 8bits of the addressed halfword, ie. "[addr AND NOT 1]=data*101h"
 			PALETTE_RAM_ADDR => unsafe {
 				*(self.palette_ram.as_ptr().add(((address & 0x3ff) as usize) & !0x1) as *mut u16) = (value as u16) * 0x101;
 			},
 			VRAM_ADDR => {
-				// NOTE: Writes to BG (6000000h-600FFFFh) (or 6000000h-6013FFFh in Bitmap mode) and to Palette (5000000h-50003FFh) are writing the new 8bit value to BOTH upper and lower 8bits of the addressed halfword, ie. "[addr AND NOT 1]=data*101h"
 				let end_bg_address;
 				if let Some(video_mode) = self.get_disp_cnt().get_bg_mode() {
 					end_bg_address = if video_mode == EVideoMode::Mode3 || video_mode == EVideoMode::Mode4 || video_mode == EVideoMode::Mode5 {
@@ -1108,8 +1201,21 @@ impl MemoryInterface for PPU {
 		unsafe {
 			match address & 0xff00_0000 {
 				crate::system::IO_ADDR => {
-					let addr = (address & PPU_REGISTERS_END) as usize;
-					0x0
+					let addr = address & PPU_REGISTERS_END;
+					match addr {
+						DISP_CNT_ADDRESS => self.disp_cnt.data.load_le(),
+						DISP_STAT_ADDRESS => self.disp_stat.data.load_le(),
+						VCOUNT_ADDRESS => self.v_count as u16, // 0 if addressing the upper bits
+						BG0_CNT_ADDRESS => self.bg_controls[0].data.load_le(),
+						BG1_CNT_ADDRESS => self.bg_controls[1].data.load_le(),
+						BG2_CNT_ADDRESS => self.bg_controls[2].data.load_le(),
+						BG3_CNT_ADDRESS => self.bg_controls[3].data.load_le(),
+						WIN_IN_ADDRESS => self.win_in.data.load_le(),
+						WIN_OUT_ADDRESS => self.win_out.data.load_le(),
+						BLD_CNT_ADDRESS => self.bld_cnt.data.load_le(),
+						BLD_ALPHA_ADDRESS => self.bld_alpha.data.load_le(),
+						_ => 0x0,
+					}
 				}
 				PALETTE_RAM_ADDR => *(self.palette_ram.as_ptr().add((address & 0x3ff) as usize) as *mut u16) as u16,
 				VRAM_ADDR => *(self.vram.as_ptr().add((address & 0x17fff) as usize) as *mut u16) as u16,
@@ -1123,7 +1229,51 @@ impl MemoryInterface for PPU {
 		unsafe {
 			match address & 0xff00_0000 {
 				crate::system::IO_ADDR => {
-					let addr = (address & PPU_REGISTERS_END) as usize;
+					let addr = address & PPU_REGISTERS_END;
+					match addr {
+						DISP_CNT_ADDRESS => self.disp_cnt.data.store_le(value),
+						DISP_STAT_ADDRESS => self.disp_stat.data.store_le(value),
+						VCOUNT_ADDRESS => {}
+						BG0_CNT_ADDRESS => self.bg_controls[0].data.store_le(value),
+						BG1_CNT_ADDRESS => self.bg_controls[1].data.store_le(value),
+						BG2_CNT_ADDRESS => self.bg_controls[2].data.store_le(value),
+						BG3_CNT_ADDRESS => self.bg_controls[3].data.store_le(value),
+						BG0_HOFS_ADDRESS => self.bg_hofs[0] = value,
+						BG0_VOFS_ADDRESS => self.bg_vofs[0] = value,
+						BG1_HOFS_ADDRESS => self.bg_hofs[1] = value,
+						BG1_VOFS_ADDRESS => self.bg_vofs[1] = value,
+						BG2_HOFS_ADDRESS => self.bg_hofs[2] = value,
+						BG2_VOFS_ADDRESS => self.bg_vofs[2] = value,
+						BG3_HOFS_ADDRESS => self.bg_hofs[3] = value,
+						BG3_VOFS_ADDRESS => self.bg_vofs[3] = value,
+						BG2_PA_ADDRESS => self.bg_affine_matrices[0].pa.data.store_le(value),
+						BG2_PB_ADDRESS => self.bg_affine_matrices[0].pb.data.store_le(value),
+						BG2_PC_ADDRESS => self.bg_affine_matrices[0].pa.data.store_le(value),
+						BG2_PD_ADDRESS => self.bg_affine_matrices[0].pd.data.store_le(value),
+						BG2_X_LO_ADDRESS => self.bg_affine_matrices[0].x.data[0..16].store_le(value),
+						BG2_X_HI_ADDRESS => self.bg_affine_matrices[0].x.data[16..32].store_le(value),
+						BG2_Y_LO_ADDRESS => self.bg_affine_matrices[0].y.data[0..16].store_le(value),
+						BG2_Y_HI_ADDRESS => self.bg_affine_matrices[0].y.data[16..32].store_le(value),
+						BG3_PA_ADDRESS => self.bg_affine_matrices[1].pa.data.store_le(value),
+						BG3_PB_ADDRESS => self.bg_affine_matrices[1].pb.data.store_le(value),
+						BG3_PC_ADDRESS => self.bg_affine_matrices[1].pc.data.store_le(value),
+						BG3_PD_ADDRESS => self.bg_affine_matrices[1].pd.data.store_le(value),
+						BG3_X_LO_ADDRESS => self.bg_affine_matrices[1].x.data[0..16].store_le(value),
+						BG3_X_HI_ADDRESS => self.bg_affine_matrices[1].x.data[16..32].store_le(value),
+						BG3_Y_LO_ADDRESS => self.bg_affine_matrices[1].y.data[0..16].store_le(value),
+						BG3_Y_HI_ADDRESS => self.bg_affine_matrices[1].y.data[16..32].store_le(value),
+						WIN0_H_ADDRESS => self.win_dimensions[0].h.store_le(value),
+						WIN1_H_ADDRESS => self.win_dimensions[1].h.store_le(value),
+						WIN0_V_ADDRESS => self.win_dimensions[0].v.store_le(value),
+						WIN1_V_ADDRESS => self.win_dimensions[1].v.store_le(value),
+						WIN_IN_ADDRESS => self.win_in.data.store_le(value),
+						WIN_OUT_ADDRESS => self.win_out.data.store_le(value),
+						MOSAIC_LO_ADDRESS => self.mosaic.data.store_le(value),
+						BLD_CNT_ADDRESS => self.bld_cnt.data.store_le(value),
+						BLD_ALPHA_ADDRESS => self.bld_alpha.data.store_le(value),
+						BLD_Y_LO_ADDRESS => self.bld_y.store_le(value),
+						_ => {}
+					}
 				}
 				PALETTE_RAM_ADDR => *(self.palette_ram.as_ptr().add((address & 0x3ff) as usize) as *mut u16) = value,
 				VRAM_ADDR => *(self.vram.as_ptr().add((address & 0x17fff) as usize) as *mut u16) = value,
@@ -1137,8 +1287,17 @@ impl MemoryInterface for PPU {
 		unsafe {
 			match address & 0xff00_0000 {
 				crate::system::IO_ADDR => {
-					let addr = (address & PPU_REGISTERS_END) as usize;
-					0x0
+					let addr = address & PPU_REGISTERS_END;
+					// NOTE: Memory accesses are always aligned!!!
+					match addr {
+						DISP_CNT_ADDRESS => self.disp_cnt.data.load_le::<u32>(),
+						DISP_STAT_ADDRESS => self.disp_stat.data.load_le::<u32>() | ((self.v_count as u32) << 16),
+						BG0_CNT_ADDRESS => self.bg_controls[0].data.load_le::<u32>() | (self.bg_controls[1].data.load_le::<u32>() << 16),
+						BG2_CNT_ADDRESS => self.bg_controls[2].data.load_le::<u32>() | (self.bg_controls[3].data.load_le::<u32>() << 16),
+						WIN_IN_ADDRESS => self.win_in.data.load_le::<u32>() | (self.win_out.data.load_le::<u32>() << 16),
+						BLD_CNT_ADDRESS => self.bld_cnt.data.load_le::<u32>() | (self.bld_alpha.data.load_le::<u32>() << 16),
+						_ => 0x0,
+					}
 				}
 				PALETTE_RAM_ADDR => *(self.palette_ram.as_ptr().add((address & 0x3ff) as usize) as *mut u32) as u32,
 				VRAM_ADDR => *(self.vram.as_ptr().add((address & 0x17fff) as usize) as *mut u32) as u32,
@@ -1152,7 +1311,78 @@ impl MemoryInterface for PPU {
 		unsafe {
 			match address & 0xff00_0000 {
 				crate::system::IO_ADDR => {
-					let addr = (address & PPU_REGISTERS_END) as usize;
+					let addr = address & PPU_REGISTERS_END;
+					match addr {
+						DISP_CNT_ADDRESS => self.disp_cnt.data.store_le(value as u16),
+						DISP_STAT_ADDRESS => self.disp_stat.data.store_le(value as u16),
+						BG0_CNT_ADDRESS => {
+							self.bg_controls[0].data.store_le(value as u16);
+							self.bg_controls[1].data.store_le((value >> 16) as u16);
+						}
+						BG0_HOFS_ADDRESS => {
+							self.bg_hofs[0] = value as u16;
+							self.bg_vofs[0] = (value >> 16) as u16;
+						}
+						BG1_HOFS_ADDRESS => {
+							self.bg_hofs[1] = value as u16;
+							self.bg_vofs[1] = (value >> 16) as u16;
+						}
+						BG2_HOFS_ADDRESS => {
+							self.bg_hofs[2] = value as u16;
+							self.bg_vofs[2] = (value >> 16) as u16;
+						}
+						BG3_HOFS_ADDRESS => {
+							self.bg_hofs[3] = value as u16;
+							self.bg_vofs[3] = (value >> 16) as u16;
+						}
+						BG2_PA_ADDRESS => {
+							self.bg_affine_matrices[0].pa.data.store_le(value as u16);
+							self.bg_affine_matrices[0].pb.data.store_le((value >> 16) as u16);
+						}
+						BG2_PC_ADDRESS => {
+							self.bg_affine_matrices[0].pc.data.store_le(value as u16);
+							self.bg_affine_matrices[0].pd.data.store_le((value >> 16) as u16);
+						}
+						BG2_X_LO_ADDRESS => {
+							self.bg_affine_matrices[0].x.data.store_le(value);
+						}
+						BG2_Y_LO_ADDRESS => {
+							self.bg_affine_matrices[0].y.data.store_le(value);
+						}
+						BG3_PA_ADDRESS => {
+							self.bg_affine_matrices[1].pa.data.store_le(value as u16);
+							self.bg_affine_matrices[1].pb.data.store_le((value >> 16) as u16);
+						}
+						BG3_PC_ADDRESS => {
+							self.bg_affine_matrices[1].pc.data.store_le(value as u16);
+							self.bg_affine_matrices[1].pd.data.store_le((value >> 16) as u16);
+						}
+						BG3_X_LO_ADDRESS => {
+							self.bg_affine_matrices[1].x.data.store_le(value);
+						}
+						BG3_Y_LO_ADDRESS => {
+							self.bg_affine_matrices[1].y.data.store_le(value);
+						}
+						WIN0_H_ADDRESS => {
+							self.win_dimensions[0].h.store_le(value as u16);
+							self.win_dimensions[1].h.store_le((value >> 16) as u16);
+						}
+						WIN0_V_ADDRESS => {
+							self.win_dimensions[0].v.store_le(value as u16);
+							self.win_dimensions[1].v.store_le((value >> 16) as u16);
+						}
+						WIN_IN_ADDRESS => {
+							self.win_in.data.store_le(value as u16);
+							self.win_out.data.store_le((value >> 16) as u16);
+						}
+						MOSAIC_LO_ADDRESS => self.mosaic.data.store_le(value as u16),
+						BLD_CNT_ADDRESS => {
+							self.bld_cnt.data.store_le(value as u16);
+							self.bld_alpha.data.store_le((value >> 16) as u16);
+						}
+						BLD_Y_LO_ADDRESS => self.bld_y.store_le(value as u16),
+						_ => {}
+					}
 				}
 				PALETTE_RAM_ADDR => *(self.palette_ram.as_ptr().add((address & 0x3ff) as usize) as *mut u32) = value,
 				VRAM_ADDR => *(self.vram.as_ptr().add((address & 0x17fff) as usize) as *mut u32) = value,

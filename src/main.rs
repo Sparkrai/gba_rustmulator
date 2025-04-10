@@ -37,7 +37,7 @@ fn main() {
 	File::open("data/bios.gba").expect("Bios couldn't be opened!").read_to_end(&mut bios_data).unwrap();
 
 	let mut cartridge_data = Vec::<u8>::new();
-	if File::open("data/tests/arm/arm.gba")
+	if File::open("data/demos/sbb_aff.gba")
 		.expect("Cartridge couldn't be opened!")
 		.read_to_end(&mut cartridge_data)
 		.is_ok()
@@ -103,51 +103,34 @@ fn main() {
 						if execute_step {
 							execute_step = false;
 							current_cycle = (current_cycle + 1) % CYCLES_PER_FRAME;
-							bus.ppu.set_vcount((current_cycle / 1232) as u8);
+							bus.ppu.step(current_cycle);
 
 							arm7tdmi::decode(&mut cpu, &mut bus);
 						} else {
-							// NOTE: Reset H/V blank
-							bus.ppu.get_disp_stat().set_h_blank(false);
-							bus.ppu.get_disp_stat().set_v_blank(false);
 							for _ in 0..=CYCLES_PER_FRAME {
 								current_cycle = (current_cycle + 1) % CYCLES_PER_FRAME;
-								bus.ppu.set_vcount((current_cycle / 1232) as u8);
+								let (h_blank_irq, v_blank_irq) = bus.ppu.step(current_cycle);
 
 								// TODO: Check interrupts!!!
-								if bus.ppu.get_vcount() == bus.ppu.get_disp_stat().get_v_count_trigger() {
-									bus.ppu.get_disp_stat().set_v_counter_flag(true);
-
-									if bus.io_regs.get_ime() && bus.io_regs.get_ie().get_v_counter_match() && bus.ppu.get_disp_stat().get_v_counter_irq() {
-										bus.io_regs.get_if().set_v_counter_match(true);
-										cpu.exception(crate::arm7tdmi::EExceptionType::Irq);
-										bus.io_regs.halted = false;
-									}
-								} else {
-									bus.ppu.get_disp_stat().set_v_counter_flag(false);
+								if bus.ppu.get_disp_stat().get_v_counter_flag()
+									&& bus.io_regs.get_ime() && bus.io_regs.get_ie().get_v_counter_match()
+									&& bus.ppu.get_disp_stat().get_v_counter_irq()
+								{
+									bus.io_regs.get_if().set_v_counter_match(true);
+									cpu.exception(crate::arm7tdmi::EExceptionType::Irq);
+									bus.io_regs.halted = false;
 								}
 
 								// H-Blank
-								if current_cycle.wrapping_sub(960) % 1232 == 0 {
-									bus.ppu.get_disp_stat().set_h_blank(true);
-
-									if bus.io_regs.get_ime() && bus.io_regs.get_ie().get_h_blank() && bus.ppu.get_disp_stat().get_h_blank_irq() {
-										bus.io_regs.get_if().set_h_blank(true);
-										cpu.exception(crate::arm7tdmi::EExceptionType::Irq);
-										bus.io_regs.halted = false;
-									}
-								} else if current_cycle == 197120 {
+								if h_blank_irq && bus.io_regs.get_ime() && bus.io_regs.get_ie().get_h_blank() && bus.ppu.get_disp_stat().get_h_blank_irq() {
+									bus.io_regs.get_if().set_h_blank(true);
+									cpu.exception(crate::arm7tdmi::EExceptionType::Irq);
+									bus.io_regs.halted = false;
+								} else if v_blank_irq && bus.io_regs.get_ime() && bus.io_regs.get_ie().get_v_blank() && bus.ppu.get_disp_stat().get_v_blank_irq() {
 									// V-Blank
-									bus.ppu.get_disp_stat().set_v_blank(true);
-
-									if bus.io_regs.get_ime() && bus.io_regs.get_ie().get_v_blank() && bus.ppu.get_disp_stat().get_v_blank_irq() {
-										bus.io_regs.get_if().set_v_blank(true);
-										cpu.exception(crate::arm7tdmi::EExceptionType::Irq);
-										bus.io_regs.halted = false;
-									}
-								} else if current_cycle % 1232 == 0 {
-									// H-Blank end
-									bus.ppu.get_disp_stat().set_h_blank(false);
+									bus.io_regs.get_if().set_v_blank(true);
+									cpu.exception(crate::arm7tdmi::EExceptionType::Irq);
+									bus.io_regs.halted = false;
 								}
 
 								if !bus.io_regs.halted {
