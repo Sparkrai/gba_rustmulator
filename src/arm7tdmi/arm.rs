@@ -3,10 +3,8 @@ use bitvec::prelude::BitView;
 use num_traits::{FromPrimitive, PrimInt};
 
 use crate::arm7tdmi::cpu::{CPU, LINK_REGISTER_REGISTER, PROGRAM_COUNTER_REGISTER};
-use crate::arm7tdmi::{cond_passed, EShiftType};
-use crate::arm7tdmi::{sign_extend, EOperatingMode};
+use crate::arm7tdmi::{cond_passed, sign_extend, EExceptionType, EOperatingMode, EShiftType};
 use crate::memory::MemoryBus;
-use core::num::bignum::FullOps;
 
 pub fn operate_arm(cpu: &mut CPU, bus: &mut MemoryBus, instruction: u32) {
 	let cond = (instruction >> (32 - 4)) as u8;
@@ -31,13 +29,7 @@ pub fn operate_arm(cpu: &mut CPU, bus: &mut MemoryBus, instruction: u32) {
 			return;
 		} else if (0xe000_0010 & instruction) == 0x0600_0010 {
 			// Undefined instruction
-			cpu.get_mut_spsr(EOperatingMode::UndefinedMode).set_value(cpu.get_cpsr().get_value());
-
-			cpu.set_operating_mode(EOperatingMode::UndefinedMode);
-			cpu.get_cpsr().set_t(false);
-			cpu.get_cpsr().set_i(true);
-
-			cpu.set_register_value(PROGRAM_COUNTER_REGISTER, 0x4);
+			cpu.exception(EExceptionType::Undefined);
 		} else if (0x0fb0_0ff0 & instruction) == 0x0100_0090 {
 			// SWP/SWPB
 			let b = (1 << 22 & instruction) != 0;
@@ -52,7 +44,7 @@ pub fn operate_arm(cpu: &mut CPU, bus: &mut MemoryBus, instruction: u32) {
 				cpu.set_register_value(rd_index, temp as u32);
 			} else {
 				let temp;
-				if (address & 0x0000_0003) == 0 {
+				if (rm & 0x0000_0003) == 0 {
 					temp = bus.read_32(rn);
 				} else {
 					// NOTE: Forced alignment and rotation of data! (UNPREDICTABLE)
@@ -65,8 +57,9 @@ pub fn operate_arm(cpu: &mut CPU, bus: &mut MemoryBus, instruction: u32) {
 			}
 		} else if (0x0f00_00f0 & instruction) == 0x0000_0090 {
 			let s = (0x0010_0000 & instruction) != 0;
-			let rn = cpu.get_register_value(((instruction & 0x0000_f000) >> 12) as u8);
-			let rn = cpu.get_register_value(((instruction & 0x0000_0f00) >> 8) as u8);
+			let rn_index = ((instruction & 0x0000_f000) >> 12) as u8;
+			let rn = cpu.get_register_value(rn_index);
+			let rs = cpu.get_register_value(((instruction & 0x0000_0f00) >> 8) as u8);
 			let rm = cpu.get_register_value((instruction & 0x0000_000f) as u8);
 			let rd_index = ((instruction & 0x000f_0000) >> 16) as u8;
 
@@ -130,7 +123,7 @@ pub fn operate_arm(cpu: &mut CPU, bus: &mut MemoryBus, instruction: u32) {
 					cpu.set_register_value(rn_index, alu_out as u32);
 
 					if s {
-						cpu.get_mut_cpsr().set_n((alu_out & 0x8000_0000_0000_0000) != 0);
+						cpu.get_mut_cpsr().set_n(alu_out.is_negative());
 						cpu.get_mut_cpsr().set_z(alu_out == 0);
 						cpu.get_mut_cpsr().set_c(false);
 						cpu.get_mut_cpsr().set_v(false);
@@ -280,6 +273,12 @@ pub fn operate_arm(cpu: &mut CPU, bus: &mut MemoryBus, instruction: u32) {
 				rn
 			};
 
+			// Forced User Mode
+			let old_mode = cpu.get_operating_mode();
+			if !p && w {
+				cpu.set_operating_mode(EOperatingMode::UserMode);
+			}
+
 			if b {
 				if l {
 					cpu.set_register_value(rd_index, bus.read_8(address) as u32);
@@ -314,7 +313,7 @@ pub fn operate_arm(cpu: &mut CPU, bus: &mut MemoryBus, instruction: u32) {
 			} else if !p {
 				// Post Indexed
 				if w {
-					// TODO: User mode!!!
+					cpu.set_operating_mode(old_mode);
 				}
 
 				let new_address = if u { rn.wrapping_add(offset) } else { rn.wrapping_sub(offset) };
@@ -328,20 +327,76 @@ pub fn operate_arm(cpu: &mut CPU, bus: &mut MemoryBus, instruction: u32) {
 			let w = (0x0020_0000 & instruction) != 0;
 			let l = (0x0010_0000 & instruction) != 0;
 
+			let h = (0x0000_0020 & instruction) != 0;
+			let s = (0x0000_0040 & instruction) != 0;
+
 			let rn_index = ((instruction & 0x000f_0000) >> 16) as u8;
 			let rn = cpu.get_register_value(rn_index);
 			let rd_index = ((instruction & 0x0000_f000) >> 12) as u8;
-			let offset = instruction & 0x0000_000f;
 
-			let op;
-			if (0x0000_0020 & instruction) > 0 {
-				op = "H"
-			} else if (0x0000_0030 & instruction) > 0 {
-				op = "SB"
-			} else if (0x0000_0040 & instruction) > 0 {
-				op = "SH"
+			// Instructions don't exist in ARMv4
+			debug_assert!((!l && !s && h) || (l && (s || h)), "NOT VALID INSTRUCTION!");
+
+			let offset;
+			if i {
+				offset = (instruction & 0x0000_0f00 >> 4) | (instruction & 0x0000_000f);
 			} else {
-				panic!("ERROR!!!");
+				let rm_index = (instruction & 0x0000_000f) as u8;
+				offset = cpu.get_register_value(rm_index);
+			}
+
+			let address = if p {
+				if u {
+					rn.wrapping_add(offset)
+				} else {
+					rn.wrapping_sub(offset)
+				}
+			} else {
+				rn
+			};
+
+			if l {
+				let data;
+				if h {
+					if s {
+						if (address & 0x0000_0001) == 0 {
+							data = sign_extend(bus.read_16(address), 16) as u32;
+						} else {
+							// NOTE: Read byte! (UNPREDICTABLE)
+							data = sign_extend(bus.read_8(address), 8) as u32;
+						}
+					} else {
+						if (address & 0x0000_0001) == 0 {
+							data = bus.read_16(address) as u32;
+						} else {
+							// NOTE: Forced alignment and rotation of data! (UNPREDICTABLE)
+							data = bus.read_16(address - 1).rotate_right(8) as u32;
+						}
+					}
+				} else {
+					// S
+					data = sign_extend(bus.read_8(address), 8) as u32;
+				}
+
+				if rd_index == PROGRAM_COUNTER_REGISTER {
+					// NOTE: Forced alignment! (UNPREDICTABLE)
+					cpu.set_register_value(rd_index, data & !0x3);
+				} else {
+					cpu.set_register_value(rd_index, data);
+				}
+			} else {
+				let rd = cpu.get_register_value(rd_index);
+				// NOTE: Forced alignment! (UNPREDICTABLE)
+				bus.write_16(address - 1, rd as u16);
+			}
+
+			// Pre Indexed
+			if p && w {
+				cpu.set_register_value(rn_index, address);
+			} else if !p {
+				// Post Indexed
+				let new_address = if u { rn.wrapping_add(offset) } else { rn.wrapping_sub(offset) };
+				cpu.set_register_value(rn_index, new_address);
 			}
 		} else if (0x0e00_0000 & instruction) == 0x0800_0000 {
 			// LDM/STM Load/Store multiple registers
@@ -443,6 +498,9 @@ pub fn operate_arm(cpu: &mut CPU, bus: &mut MemoryBus, instruction: u32) {
 			if user_bank_transfer {
 				cpu.set_operating_mode(old_mode);
 			}
+		} else if (0x0f00_0000 & instruction) == 0x0f00_0000 {
+			// SWI Software Interrupt Exception
+			cpu.exception(EExceptionType::SoftwareInterrupt);
 		} else if (0x0c00_0000 & instruction) == 0x0000_0000 {
 			// ALU
 			let i = (0x0200_0000 & instruction) > 0;

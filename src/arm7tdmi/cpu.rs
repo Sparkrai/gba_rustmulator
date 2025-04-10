@@ -2,7 +2,7 @@ use bitvec::prelude::*;
 use num_traits::{FromPrimitive, ToPrimitive};
 
 use crate::arm7tdmi::psr::CPSR;
-use crate::arm7tdmi::EOperatingMode;
+use crate::arm7tdmi::{EExceptionType, EOperatingMode};
 
 // Special registers
 pub const STACK_POINTER_REGISTER: u8 = 13;
@@ -95,8 +95,17 @@ impl CPU {
 		return self.registers[PROGRAM_COUNTER_REGISTER as usize];
 	}
 
+	/// The length in bytes of an instruction in the current CPU state.
+	/// ARM = 4 - THUMB = 2
+	pub fn get_instruction_length(&self) -> u32 {
+		if self.cpsr.get_t() {
+			2
+		} else {
+			4
+		}
+	}
+
 	pub fn get_register_value(&self, index: u8) -> u32 {
-		// TODO: Check if true for all instructions!!!
 		if index == PROGRAM_COUNTER_REGISTER {
 			let pc_offset = if self.get_cpsr().get_t() { 4 } else { 8 };
 			return self.registers[index as usize] + pc_offset;
@@ -235,5 +244,65 @@ impl CPU {
 
 	pub fn set_operating_mode(&mut self, mode: EOperatingMode) {
 		self.cpsr.set_mode_bits(mode.to_u8().unwrap());
+	}
+
+	pub fn exception(&mut self, exception_type: EExceptionType) {
+		let exception_vector_address;
+		let return_address_offset;
+		let operating_mode;
+		match exception_type {
+			EExceptionType::Reset => {
+				exception_vector_address = 0x0;
+				return_address_offset = 0x0;
+				operating_mode = EOperatingMode::SupervisorMode;
+			}
+			EExceptionType::Undefined => {
+				exception_vector_address = 0x4;
+				return_address_offset = self.get_instruction_length();
+				operating_mode = EOperatingMode::UndefinedMode;
+			}
+			EExceptionType::SoftwareInterrupt => {
+				exception_vector_address = 0x8;
+				return_address_offset = self.get_instruction_length();
+				operating_mode = EOperatingMode::SupervisorMode;
+			}
+			EExceptionType::PrefetchAbort => {
+				exception_vector_address = 0xc;
+				return_address_offset = 0x4;
+				operating_mode = EOperatingMode::AbortMode;
+			}
+			EExceptionType::DataAbort => {
+				exception_vector_address = 0x10;
+				return_address_offset = 0x8;
+				operating_mode = EOperatingMode::AbortMode;
+			}
+			EExceptionType::Irq => {
+				exception_vector_address = 0x18;
+				return_address_offset = 0x4;
+				operating_mode = EOperatingMode::IrqMode;
+			}
+			EExceptionType::Fiq => {
+				exception_vector_address = 0x1c;
+				return_address_offset = 0x4;
+				operating_mode = EOperatingMode::FiqMode;
+			}
+		}
+
+		let cpsr_value = self.cpsr.get_value();
+		self.get_mut_spsr(operating_mode).set_value(cpsr_value);
+
+		// Change mode
+		self.set_operating_mode(operating_mode);
+
+		self.cpsr.set_t(false);
+		if exception_type == EExceptionType::Reset || exception_type == EExceptionType::Fiq {
+			self.cpsr.set_f(true);
+		}
+		self.cpsr.set_i(true);
+
+		// Return address
+		self.set_register_value(LINK_REGISTER_REGISTER, self.get_current_pc() + return_address_offset);
+
+		self.set_register_value(PROGRAM_COUNTER_REGISTER, exception_vector_address);
 	}
 }

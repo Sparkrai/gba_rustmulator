@@ -1,7 +1,7 @@
 use imgui::*;
 
 use crate::arm7tdmi::cpu::CPU;
-use crate::arm7tdmi::{decode, EOperatingMode};
+use crate::arm7tdmi::EOperatingMode;
 use crate::debugging::disassembling::{disassemble_arm, disassemble_thumb};
 use crate::memory::MemoryBus;
 
@@ -73,7 +73,7 @@ pub fn build_memory_debug_window(
 				let mut list_clipper = ListClipper::new(ENTRIES).begin(&ui);
 				while list_clipper.step() {
 					for row in list_clipper.display_start()..list_clipper.display_end() {
-						let address = starting_address.saturating_add((row as u32 * (pc_offset / 2)));
+						let address = starting_address.saturating_add(row as u32 * (pc_offset / 2));
 						if address <= u32::max_value() - (pc_offset / 2) {
 							Selectable::new(&*im_str!("{:#010X}:", address))
 								.selected(address == cpu.get_current_pc())

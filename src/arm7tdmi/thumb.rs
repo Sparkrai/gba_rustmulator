@@ -2,7 +2,7 @@ use bitvec::prelude::*;
 use num_traits::PrimInt;
 
 use crate::arm7tdmi::cpu::{CPU, LINK_REGISTER_REGISTER, PROGRAM_COUNTER_REGISTER, STACK_POINTER_REGISTER};
-use crate::arm7tdmi::{cond_passed, sign_extend, EShiftType};
+use crate::arm7tdmi::{cond_passed, sign_extend, EExceptionType, EShiftType};
 use crate::memory::MemoryBus;
 
 pub fn operate_thumb(instruction: u16, cpu: &mut CPU, bus: &mut MemoryBus) {
@@ -478,7 +478,7 @@ pub fn operate_thumb(instruction: u16, cpu: &mut CPU, bus: &mut MemoryBus) {
 		if op == 0 {
 			let rd = cpu.get_register_value(rd_index);
 			// NOTE: Forced alignment! (UNPREDICTABLE)
-			bus.write_16(address & !0x0000_0001, rd as u16);
+			bus.write_16(address - 1, rd as u16);
 		} else {
 			let data;
 			match op {
@@ -492,7 +492,7 @@ pub fn operate_thumb(instruction: u16, cpu: &mut CPU, bus: &mut MemoryBus) {
 						data = bus.read_16(address) as u32;
 					} else {
 						// NOTE: Forced alignment and rotation of data! (UNPREDICTABLE)
-						data = bus.read_16(address & !0x0000_0001).rotate_right(8) as u32;
+						data = bus.read_16(address - 1).rotate_right(8) as u32;
 					}
 				}
 				// LDSH
@@ -589,7 +589,22 @@ pub fn operate_thumb(instruction: u16, cpu: &mut CPU, bus: &mut MemoryBus) {
 			// NOTE: Forced alignment! (UNPREDICTABLE)
 			bus.write_32(address & !0x0000_0003, rd);
 		}
+	} else if (0xf000 & instruction) == 0xa000 {
+		// ADD Get relative offset
+		let sp = (0x0800 & instruction) != 0;
+		let rd_index = ((instruction & 0x0700) >> 8) as u8;
+		let operand = (instruction & 0x00ff) as u32;
+
+		let value;
+		if sp {
+			value = cpu.get_register_value(STACK_POINTER_REGISTER) + (operand * 4);
+		} else {
+			value = (cpu.get_register_value(PROGRAM_COUNTER_REGISTER) & !0x3) + (operand * 4);
+		}
+
+		cpu.set_register_value(rd_index, value);
 	} else if (0xff00 & instruction) == 0xb000 {
+		// ADD offset to Stack Pointer
 		let is_sub = (0x0080 & instruction) != 0;
 		let operand = (instruction & 0x007f) as u32;
 		let sp = cpu.get_register_value(STACK_POINTER_REGISTER);
@@ -647,6 +662,50 @@ pub fn operate_thumb(instruction: u16, cpu: &mut CPU, bus: &mut MemoryBus) {
 
 			cpu.set_register_value(STACK_POINTER_REGISTER, start_address);
 		}
+	} else if (0xf000 & instruction) == 0xc000 {
+		// LDMIA/STMIA
+		let l = (0x0800 & instruction) != 0;
+		let rn_index = ((0x0700 & instruction) >> 8) as u8;
+		let rn = cpu.get_register_value(rn_index);
+		let reg_list = (0x00ff & instruction).view_bits::<Lsb0>().to_bitvec().into_boxed_bitslice();
+
+		// Addressing Mode
+		let start_address = rn;
+		let end_address = rn.wrapping_add(4 * (reg_list.count_ones() as u32)) - 4;
+		let mut address = start_address;
+
+		let store_rn = reg_list[rn_index as usize];
+		if !(l && store_rn) {
+			cpu.set_register_value(rn_index, rn.wrapping_add(4 * (reg_list.count_ones() as u32)))
+		}
+
+		if l {
+			for i in 0..8 {
+				if reg_list[i] {
+					cpu.set_register_value(i as u8, bus.read_32(address));
+					address = address.wrapping_add(4);
+				}
+			}
+			debug_assert_eq!(end_address, address.wrapping_sub(4));
+		} else {
+			let mut first = true;
+			for i in 0..16 {
+				if reg_list[i] {
+					// NOTE: UNPREDICTABLE BEHAVIOR
+					let value = if first && i == rn_index as usize { rn } else { cpu.get_register_value(i as u8) };
+
+					bus.write_32(address, value);
+					address = address.wrapping_add(4);
+
+					first = false;
+				}
+			}
+
+			debug_assert_eq!(end_address, address.wrapping_sub(4));
+		}
+	} else if (0xff00 & instruction) == 0xdf00 {
+		// SWI Software Interrupt Exception
+		cpu.exception(EExceptionType::SoftwareInterrupt);
 	} else if (0xf000 & instruction) == 0xd000 {
 		// Conditional Branch
 		let cond = ((0x0f00 & instruction) >> 8) as u8;

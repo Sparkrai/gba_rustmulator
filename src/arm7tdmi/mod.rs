@@ -26,6 +26,17 @@ pub enum EOperatingMode {
 	SystemMode = 0x1f,
 }
 
+#[derive(Debug, Copy, Clone, Eq, PartialEq)]
+pub enum EExceptionType {
+	Reset,
+	Undefined,
+	SoftwareInterrupt,
+	PrefetchAbort,
+	DataAbort,
+	Irq,
+	Fiq,
+}
+
 #[derive(Debug, Copy, Clone, Eq, PartialEq, FromPrimitive)]
 pub enum EShiftType {
 	LSL,

@@ -8,7 +8,6 @@ use memory::*;
 
 use crate::debugging::{build_cpu_debug_window, build_memory_debug_window};
 use std::sync::{Arc, RwLock};
-use std::time::Duration;
 
 mod arm7tdmi;
 mod debugging;
@@ -40,19 +39,20 @@ fn main() {
 		let mut show_memory_debug_window = true;
 		let mut show_demo_window = false;
 
-		let mut debug_mode = Arc::new(RwLock::new(true));
-		let mut execute_step = Arc::new(RwLock::new(false));
-		let mut breakpoint_set = false;
-		let mut breakpoint_address = Arc::new(RwLock::new(0x0u32));
+		let debug_mode = Arc::new(RwLock::new(true));
+		let execute_step = Arc::new(RwLock::new(false));
+		let breakpoint_set = Arc::new(RwLock::new(false));
+		let breakpoint_address = Arc::new(RwLock::new(0x0u32));
 		let mut current_inspected_address = 0;
 
-		let mut cpu = Arc::new(RwLock::new(cpu_raw));
-		let mut bus = Arc::new(RwLock::new(bus_raw));
+		let cpu = Arc::new(RwLock::new(cpu_raw));
+		let bus = Arc::new(RwLock::new(bus_raw));
 
 		let main_cpu = cpu.clone();
 		let main_bus = bus.clone();
 		let main_debug_mode = debug_mode.clone();
 		let main_execute_step = execute_step.clone();
+		let main_breakpoint_set = breakpoint_set.clone();
 		let main_breakpoint_address = breakpoint_address.clone();
 		std::thread::spawn(move || loop {
 			let debug_mode_read = main_debug_mode.read().unwrap();
@@ -71,9 +71,12 @@ fn main() {
 				let mut bus_write = main_bus.write().unwrap();
 				arm7tdmi::decode(&mut cpu_write, &mut bus_write);
 
-				let breakpoint_address_read = main_breakpoint_address.read().unwrap();
-				if cpu_write.get_current_pc() == *breakpoint_address_read {
-					*main_debug_mode.write().unwrap() = true;
+				let breakpoint_set_read = main_breakpoint_set.read().unwrap();
+				if *breakpoint_set_read {
+					let breakpoint_address_read = main_breakpoint_address.read().unwrap();
+					if cpu_write.get_current_pc() == *breakpoint_address_read {
+						*main_debug_mode.write().unwrap() = true;
+					}
 				}
 			}
 		});
@@ -83,6 +86,7 @@ fn main() {
 		let system_debug_mode = debug_mode.clone();
 		let system_execute_step = execute_step.clone();
 		let system_breakpoint_address = breakpoint_address.clone();
+		let system_breakpoint_set = breakpoint_set.clone();
 		system.main_loop(move |_exit, ui| {
 			ui.main_menu_bar(|| {
 				ui.menu(im_str!("Debug"), true, || {
@@ -109,9 +113,11 @@ fn main() {
 				let debug_mode_read = system_debug_mode.read().unwrap();
 				let execute_step_read = system_execute_step.read().unwrap();
 				let breakpoint_address_read = system_breakpoint_address.read().unwrap();
+				let breakpoint_set_read = system_breakpoint_set.read().unwrap();
 				let mut new_debug_mode = *debug_mode_read;
 				let mut new_execute_step = *execute_step_read;
 				let mut new_breakpoint_address = *breakpoint_address_read;
+				let mut new_breakpoint_set = *breakpoint_set_read;
 
 				let cpu_read = system_cpu.read().unwrap();
 				let bus_read = system_bus.read().unwrap();
@@ -122,7 +128,7 @@ fn main() {
 					&mut current_inspected_address,
 					&mut new_debug_mode,
 					&mut new_execute_step,
-					&mut breakpoint_set,
+					&mut new_breakpoint_set,
 					&mut new_breakpoint_address,
 					&ui,
 				);
@@ -135,6 +141,11 @@ fn main() {
 				if new_execute_step != *execute_step_read {
 					drop(execute_step_read);
 					*system_execute_step.write().unwrap() = new_execute_step;
+				}
+
+				if new_breakpoint_set != *breakpoint_set_read {
+					drop(breakpoint_set_read);
+					*system_breakpoint_set.write().unwrap() = new_breakpoint_set;
 				}
 
 				if new_breakpoint_address != *breakpoint_address_read {
