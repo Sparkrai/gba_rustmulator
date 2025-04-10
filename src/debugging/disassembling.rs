@@ -1,5 +1,6 @@
-use crate::arm7tdmi::EShiftType;
 use num_traits::FromPrimitive;
+
+use crate::arm7tdmi::EShiftType;
 
 pub fn print_assembly_line(line: String, pc: u32) {
 	println!("{:#06X}| {}", pc, line)
@@ -42,7 +43,7 @@ pub fn disassemble_thumb(instruction: u16) -> String {
 			0x0 => op = "LSL",
 			0x1 => op = "LSR",
 			0x2 => op = "ASR",
-			_ => panic!("ERROR!!!")
+			_ => panic!("ERROR!!!"),
 		}
 
 		format!("{} R{}, R{}, #{:#X}", op, instruction & 0x0003, (instruction & 0x001c) >> 3, (instruction & 0x07c0) >> 6)
@@ -53,7 +54,7 @@ pub fn disassemble_thumb(instruction: u16) -> String {
 			0x1 => op = "CMP",
 			0x2 => op = "ADD",
 			0x3 => op = "SUB",
-			_ => panic!("ERROR!!!")
+			_ => panic!("ERROR!!!"),
 		}
 
 		format!("{} R{}, #{:#X}", op, (instruction & 0x0700) >> 8, instruction & 0x00ff)
@@ -76,7 +77,7 @@ pub fn disassemble_thumb(instruction: u16) -> String {
 			0xd => op = "MUL",
 			0xe => op = "BIC",
 			0xf => op = "MVN",
-			_ => panic!("ERROR!!!")
+			_ => panic!("ERROR!!!"),
 		}
 
 		format!("{} R{}, R{}", op, instruction & 0x0007, (instruction & 0x001c) >> 3)
@@ -87,18 +88,14 @@ pub fn disassemble_thumb(instruction: u16) -> String {
 			0x1 => op = "CMP",
 			0x2 => op = "MOV",
 			0x3 => op = "BX",
-			_ => panic!("ERROR!!!")
+			_ => panic!("ERROR!!!"),
 		}
 
-		let rd = if op == "BX" {
-			String::from("")
-		} else {
-			format!("R{}, ", (instruction & 0x001c) >> 3)
-		};
+		let rd = if op == "BX" { String::from("") } else { format!("R{}, ", (instruction & 0x001c) >> 3) };
 
 		format!("{} {}R{}", op, rd, instruction & 0x0007)
 	} else if (0xf800 & instruction) == 0x4800 {
-		format!("LDR R{}, PC, #{:#X}", (instruction & 0x0700) >> 8, instruction & 0x00ff)
+		format!("LDR R{}, [PC, #{:#X}]", (instruction & 0x0700) >> 8, instruction & 0x00ff)
 	} else if (0xf200 & instruction) == 0x5000 {
 		let op;
 		match (0x0c00 & instruction) >> 10 {
@@ -106,10 +103,10 @@ pub fn disassemble_thumb(instruction: u16) -> String {
 			0x1 => op = "STRB",
 			0x2 => op = "LDR",
 			0x3 => op = "LDRB",
-			_ => panic!("ERROR!!!")
+			_ => panic!("ERROR!!!"),
 		}
 
-		format!("{} R{}, R{}, R{}", op, instruction & 0x0007, (instruction & 0x0038) >> 3, (instruction & 0x01c0) >> 6)
+		format!("{} R{}, [R{}, R{}]", op, instruction & 0x0007, (instruction & 0x0038) >> 3, (instruction & 0x01c0) >> 6)
 	} else if (0xf200 & instruction) == 0x5200 {
 		let op;
 		match (0x0c00 & instruction) >> 10 {
@@ -117,10 +114,10 @@ pub fn disassemble_thumb(instruction: u16) -> String {
 			0x1 => op = "LDSB",
 			0x2 => op = "LDRH",
 			0x3 => op = "LDSH",
-			_ => panic!("ERROR!!!")
+			_ => panic!("ERROR!!!"),
 		}
 
-		format!("{} R{}, R{}, R{}", op, instruction & 0x0007, (instruction & 0x0038) >> 3, (instruction & 0x01c0) >> 6)
+		format!("{} R{}, [R{}, R{}]", op, instruction & 0x0007, (instruction & 0x0038) >> 3, (instruction & 0x01c0) >> 6)
 	} else if (0xe000 & instruction) == 0x6000 {
 		let op;
 		match (0x1800 & instruction) >> 11 {
@@ -128,13 +125,13 @@ pub fn disassemble_thumb(instruction: u16) -> String {
 			0x1 => op = "LDR",
 			0x2 => op = "STRB",
 			0x3 => op = "LDRB",
-			_ => panic!("ERROR!!!")
+			_ => panic!("ERROR!!!"),
 		}
 
-		format!("{} R{}, R{}, #{:#X}", op, instruction & 0x0007, (instruction & 0x0038) >> 3, (instruction & 0x07c0) >> 6)
+		format!("{} R{}, [R{}, #{:#X}]", op, instruction & 0x0007, (instruction & 0x0038) >> 3, (instruction & 0x07c0) >> 6)
 	} else if (0xf000 & instruction) == 0x8000 {
 		let op = if (0x0800 & instruction) > 0 { "LDRH" } else { "STRH" };
-		format!("{} R{}, R{}, #{:#X}", op, instruction & 0x0007, (instruction & 0x0038) >> 3, (instruction & 0x07c0) >> 6)
+		format!("{} R{}, [R{}, #{:#X}]", op, instruction & 0x0007, (instruction & 0x0038) >> 3, (instruction & 0x07c0) >> 6)
 	} else if (0xf000 & instruction) == 0x9000 {
 		let op = if (0x0800 & instruction) > 0 { "LDR" } else { "STR" };
 		format!("{} R{}, SP, #{:#X}", op, (instruction & 0x0700) >> 8, instruction & 0x00ff)
@@ -147,7 +144,11 @@ pub fn disassemble_thumb(instruction: u16) -> String {
 	} else if (0xf600 & instruction) == 0xb400 {
 		let op = if (0x0800 & instruction) > 0 { "POP" } else { "PUSH" };
 		let r = if (0x0100 & instruction) > 0 {
-			if op == "PUSH" { ", LR" } else { ", PC" }
+			if op == "PUSH" {
+				", LR"
+			} else {
+				", PC"
+			}
 		} else {
 			""
 		};
@@ -195,7 +196,7 @@ pub fn disassemble_thumb(instruction: u16) -> String {
 			0xc => op = "BGT",
 			0xd => op = "BLE",
 			0xe => op = "UNDEFINED",
-			_ => panic!("ERROR!!!")
+			_ => panic!("ERROR!!!"),
 		}
 
 		// TODO: Interpret as signed
@@ -204,19 +205,19 @@ pub fn disassemble_thumb(instruction: u16) -> String {
 		// TODO: Interpret as signed
 		let hi = (instruction & 0x07ff) as u32;
 
-//		pc += 2;
-//		let bytes2: [u8; 2] = [data[pc], data[pc + 1]];
-//		let instruction2 = u16::from_le_bytes(bytes2);
-//		if (0xf800 & instruction2) != 0xf800 {
-//			panic!("Instruction after BL is not BL!!!");
-//		}
-//		let lo = (instruction & 0x07ff) as u32;
-//		let offset = (hi << 12) & (lo << 1);
-//
+		//		pc += 2;
+		//		let bytes2: [u8; 2] = [data[pc], data[pc + 1]];
+		//		let instruction2 = u16::from_le_bytes(bytes2);
+		//		if (0xf800 & instruction2) != 0xf800 {
+		//			panic!("Instruction after BL is not BL!!!");
+		//		}
+		//		let lo = (instruction & 0x07ff) as u32;
+		//		let offset = (hi << 12) & (lo << 1);
+		//
 		format!("BL Target: {:#X}", hi)
 	} else {
 		format!("Missing instruction!")
-	}
+	};
 }
 
 pub fn disassemble_arm(instruction: u32) -> String {
@@ -233,9 +234,19 @@ pub fn disassemble_arm(instruction: u32) -> String {
 		return format!("Undefined instruction!");
 	} else if (0x0fb0_0ff0 & instruction) == 0x0100_0090 {
 		if 1 << 22 & instruction > 0 {
-			return format!("SWPB R{}, R{}, R{}", (instruction & 0x0000_f000) >> 12, instruction & 0x0000_000f, (instruction & 0x000f_0000) >> 16);
+			return format!(
+				"SWPB R{}, R{}, R{}",
+				(instruction & 0x0000_f000) >> 12,
+				instruction & 0x0000_000f,
+				(instruction & 0x000f_0000) >> 16
+			);
 		} else {
-			return format!("SWP R{}, R{}, R{}", (instruction & 0x0000_f000) >> 12, instruction & 0x0000_000f, (instruction & 0x000f_0000) >> 16);
+			return format!(
+				"SWP R{}, R{}, R{}",
+				(instruction & 0x0000_f000) >> 12,
+				instruction & 0x0000_000f,
+				(instruction & 0x000f_0000) >> 16
+			);
 		}
 	} else if (0x0f00_00f0 & instruction) == 0x0000_0090 {
 		let s = if (0x0010_0000 & instruction) > 0 { "S" } else { "" };
@@ -248,11 +259,19 @@ pub fn disassemble_arm(instruction: u32) -> String {
 			0x5 => op = "UMLAL",
 			0x6 => op = "SMULL",
 			0x7 => op = "SMALL",
-			_ => panic!("ERROR!!!")
+			_ => panic!("ERROR!!!"),
 		}
 
 		// TODO: Revisit params!!!
-		return format!("{}{} {} R{}, R{}, R{}", op, s, disassemble_cond(cond), (instruction & 0x000f_0000) >> 16, instruction & 0x0000_000f, (instruction & 0x0000_0f00) >> 8);
+		return format!(
+			"{}{} {} R{}, R{}, R{}",
+			op,
+			s,
+			disassemble_cond(cond),
+			(instruction & 0x000f_0000) >> 16,
+			instruction & 0x0000_000f,
+			(instruction & 0x0000_0f00) >> 8
+		);
 	} else if (0x0fbf_0fff & instruction) == 0x010f_0000 {
 		if (instruction & 0x0040_0000) > 0 {
 			return format!("MRS {} R{}, CPSR", disassemble_cond(cond), (instruction & 0x0000_f000) >> 12);
@@ -336,7 +355,13 @@ pub fn disassemble_arm(instruction: u32) -> String {
 			panic!("ERROR!!!");
 		}
 
-		return format!("{}{} {} #{:#X}", l, op, disassemble_cond(cond), (instruction & 0x0000_0f00) >> 4 | instruction & 0x0000_000f);
+		return format!(
+			"{}{} {} #{:#X}",
+			l,
+			op,
+			disassemble_cond(cond),
+			(instruction & 0x0000_0f00) >> 4 | instruction & 0x0000_000f
+		);
 	} else if (0x0e00_0000 & instruction) == 0x0800_0000 {
 		let l = if (0x0010_0000 & instruction) > 0 { "LDM" } else { "STM" };
 		let w = if (0x0020_0000 & instruction) > 0 { "!" } else { "" };
@@ -376,33 +401,33 @@ pub fn disassemble_arm(instruction: u32) -> String {
 				op = "TST";
 				rd = "";
 				s = "";
-			},
+			}
 			0x9 => {
 				op = "TEQ";
 				rd = "";
 				s = "";
-			},
+			}
 			0xa => {
 				op = "CMP";
 				rd = "";
 				s = "";
-			},
+			}
 			0xb => {
 				op = "CMN";
 				rd = "";
 				s = "";
-			},
+			}
 			0xc => op = "ORR",
 			0xd => {
 				op = "MOV";
 				rn = "";
-			},
+			}
 			0xe => op = "BIC",
 			0xf => {
 				op = "MVN";
 				rn = "";
-			},
-			_ => panic!("ERROR!!!")
+			}
+			_ => panic!("ERROR!!!"),
 		}
 
 		let shifter_operand;

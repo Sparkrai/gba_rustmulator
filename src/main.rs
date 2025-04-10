@@ -1,19 +1,17 @@
 use std::fs::File;
 use std::io::Read;
 
-use bitvec::prelude::*;
 use imgui::*;
 
 use arm7tdmi::cpu::*;
-use arm7tdmi::EOperatingMode;
 use memory::*;
 
 use crate::debugging::{build_cpu_debug_window, build_memory_debug_window};
 
+mod arm7tdmi;
+mod debugging;
 mod memory;
 mod windowing;
-mod debugging;
-mod arm7tdmi;
 
 fn main() {
 	let system = windowing::init("GBA Rustmulator");
@@ -29,7 +27,11 @@ fn main() {
 	bus.load_bios(&bios_data);
 
 	let mut cartridge_data = Vec::<u8>::new();
-	if File::open("data/demos/hello.gba").expect("Cartridge couldn't be opened!").read_to_end(&mut cartridge_data).is_ok() {
+	if File::open("data/demos/hello.gba")
+		.expect("Cartridge couldn't be opened!")
+		.read_to_end(&mut cartridge_data)
+		.is_ok()
+	{
 		bus.load_cartridge(&cartridge_data);
 
 		let mut show_cpu_debug_window = true;
@@ -39,7 +41,7 @@ fn main() {
 		let mut debug_mode = true;
 		let mut current_inspected_address = 0;
 
-		system.main_loop(move |_, ui| {
+		system.main_loop(move |_exit, ui| {
 			ui.main_menu_bar(|| {
 				ui.menu(im_str!("Debug"), true, || {
 					if MenuItem::new(im_str!("CPU")).build(&ui) {

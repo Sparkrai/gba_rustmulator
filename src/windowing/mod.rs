@@ -3,7 +3,7 @@ use glium::glutin::event::{Event, WindowEvent};
 use glium::glutin::event_loop::{ControlFlow, EventLoop};
 use glium::glutin::window::WindowBuilder;
 use glium::{Display, Surface};
-use imgui::{Context, FontConfig, FontGlyphRanges, FontSource, Ui};
+use imgui::{Context, FontConfig, FontSource, Ui};
 use imgui_glium_renderer::Renderer;
 use imgui_winit_support::{HiDpiMode, WinitPlatform};
 use std::path::Path;
@@ -25,20 +25,17 @@ pub fn init(title: &str) -> System {
 	};
 	let event_loop = EventLoop::new();
 	let context = glutin::ContextBuilder::new().with_vsync(true);
-	let builder = WindowBuilder::new()
-		.with_title(title.to_owned())
-		.with_maximized(true);
-	let display =
-		Display::new(builder, context, &event_loop).expect("Failed to initialize display");
+	let builder = WindowBuilder::new().with_title(title.to_owned()).with_maximized(true);
+	let display = Display::new(builder, context, &event_loop).expect("Failed to initialize display");
 
 	let mut imgui = Context::create();
 	imgui.set_ini_filename(None);
 
-//	if let Some(backend) = clipboard::init() {
-//		imgui.set_clipboard_backend(Box::new(backend));
-//	} else {
-//		eprintln!("Failed to initialize clipboard");
-//	}
+	//	if let Some(backend) = clipboard::init() {
+	//		imgui.set_clipboard_backend(Box::new(backend));
+	//	} else {
+	//		eprintln!("Failed to initialize clipboard");
+	//	}
 
 	let mut platform = WinitPlatform::init(&mut imgui);
 	{
@@ -49,14 +46,12 @@ pub fn init(title: &str) -> System {
 
 	let hidpi_factor = platform.hidpi_factor();
 	let font_size = (13.0 * hidpi_factor) as f32;
-	imgui.fonts().add_font(&[
-		FontSource::DefaultFontData {
-			config: Some(FontConfig {
-				size_pixels: font_size,
-				..FontConfig::default()
-			}),
-		},
-	]);
+	imgui.fonts().add_font(&[FontSource::DefaultFontData {
+		config: Some(FontConfig {
+			size_pixels: font_size,
+			..FontConfig::default()
+		}),
+	}]);
 
 	imgui.io_mut().font_global_scale = (1.0 / hidpi_factor) as f32;
 
@@ -92,9 +87,7 @@ impl System {
 			}
 			Event::MainEventsCleared => {
 				let gl_window = display.gl_window();
-				platform
-					.prepare_frame(imgui.io_mut(), gl_window.window())
-					.expect("Failed to prepare frame");
+				platform.prepare_frame(imgui.io_mut(), gl_window.window()).expect("Failed to prepare frame");
 				gl_window.window().request_redraw();
 			}
 			Event::RedrawRequested(_) => {
@@ -111,9 +104,7 @@ impl System {
 				target.clear_color_srgb(0.3, 0.3, 0.3, 1.0);
 				platform.prepare_render(&ui, gl_window.window());
 				let draw_data = ui.render();
-				renderer
-					.render(&mut target, draw_data)
-					.expect("Rendering failed");
+				renderer.render(&mut target, draw_data).expect("Rendering failed");
 				target.finish().expect("Failed to swap buffers");
 			}
 			Event::WindowEvent {

@@ -1,9 +1,8 @@
 use bitvec::prelude::*;
-use num_derive::*;
-use num_traits::{FromPrimitive, ToPrimitive};
+use num_traits::FromPrimitive;
 
-use crate::arm7tdmi::EOperatingMode;
 use crate::arm7tdmi::psr::CPSR;
+use crate::arm7tdmi::EOperatingMode;
 
 // Special registers
 pub const STACK_POINTER_REGISTER: u8 = 13;
@@ -70,81 +69,81 @@ impl CPU {
 			spsr_svc: CPSR::new(),
 			spsr_abt: CPSR::new(),
 			spsr_irq: CPSR::new(),
-			spsr_und: CPSR::new()
+			spsr_und: CPSR::new(),
 		}
 	}
 
 	pub fn get_registers(&self) -> Box<[u32]> {
 		let mode = self.get_operating_mode();
 		match mode {
-			EOperatingMode::FiqMode => [&self.registers[0..8], &[self.r8_fiq, self.r9_fiq, self.r10_fiq, self.r11_fiq, self.r12_fiq, self.r13_fiq, self.r14_fiq], &[self.registers[15]]].concat().into_boxed_slice(),
+			EOperatingMode::FiqMode => [
+				&self.registers[0..8],
+				&[self.r8_fiq, self.r9_fiq, self.r10_fiq, self.r11_fiq, self.r12_fiq, self.r13_fiq, self.r14_fiq],
+				&[self.registers[15]],
+			]
+			.concat()
+			.into_boxed_slice(),
 			EOperatingMode::IrqMode => [&self.registers[0..13], &[self.r13_irq, self.r14_irq], &[self.registers[15]]].concat().into_boxed_slice(),
 			EOperatingMode::SupervisorMode => [&self.registers[0..13], &[self.r13_svc, self.r14_svc], &[self.registers[15]]].concat().into_boxed_slice(),
 			EOperatingMode::AbortMode => [&self.registers[0..13], &[self.r13_abt, self.r14_abt], &[self.registers[15]]].concat().into_boxed_slice(),
 			EOperatingMode::UndefinedMode => [&self.registers[0..13], &[self.r13_und, self.r14_und], &[self.registers[15]]].concat().into_boxed_slice(),
-			_ => self.registers.to_vec().into_boxed_slice()
+			_ => self.registers.to_vec().into_boxed_slice(),
 		}
+	}
+
+	pub fn get_current_pc(&self) -> u32 {
+		return self.registers[PROGRAM_COUNTER_REGISTER as usize];
 	}
 
 	pub fn get_register_value(&self, index: u8) -> u32 {
 		// TODO: Check if true for all instructions!!!
-		let pc_offset = if self.get_cpsr().get_t() { 4 } else { 8 };
 		if index == PROGRAM_COUNTER_REGISTER {
+			let pc_offset = if self.get_cpsr().get_t() { 4 } else { 8 };
 			return self.registers[index as usize] + pc_offset;
 		}
 
 		let mode = self.get_operating_mode();
 		match mode {
-			EOperatingMode::FiqMode => {
-				match index {
-					8 => self.r8_fiq,
-					9 => self.r9_fiq,
-					10 => self.r10_fiq,
-					11 => self.r11_fiq,
-					12 => self.r12_fiq,
-					13 => self.r13_fiq,
-					14 => self.r14_fiq,
-					_ => {
-						return self.registers[index as usize];
-					}
+			EOperatingMode::FiqMode => match index {
+				8 => self.r8_fiq,
+				9 => self.r9_fiq,
+				10 => self.r10_fiq,
+				11 => self.r11_fiq,
+				12 => self.r12_fiq,
+				13 => self.r13_fiq,
+				14 => self.r14_fiq,
+				_ => {
+					return self.registers[index as usize];
 				}
-			}
-			EOperatingMode::IrqMode => {
-				match index {
-					13 => self.r13_irq,
-					14 => self.r14_irq,
-					_ => {
-						return self.registers[index as usize];
-					}
+			},
+			EOperatingMode::IrqMode => match index {
+				13 => self.r13_irq,
+				14 => self.r14_irq,
+				_ => {
+					return self.registers[index as usize];
 				}
-			}
-			EOperatingMode::SupervisorMode => {
-				match index {
-					13 => self.r13_svc,
-					14 => self.r14_svc,
-					_ => {
-						return self.registers[index as usize];
-					}
+			},
+			EOperatingMode::SupervisorMode => match index {
+				13 => self.r13_svc,
+				14 => self.r14_svc,
+				_ => {
+					return self.registers[index as usize];
 				}
-			}
-			EOperatingMode::AbortMode => {
-				match index {
-					13 => self.r13_abt,
-					14 => self.r14_abt,
-					_ => {
-						return self.registers[index as usize];
-					}
+			},
+			EOperatingMode::AbortMode => match index {
+				13 => self.r13_abt,
+				14 => self.r14_abt,
+				_ => {
+					return self.registers[index as usize];
 				}
-			}
-			EOperatingMode::UndefinedMode => {
-				match index {
-					13 => self.r13_und,
-					14 => self.r14_und,
-					_ => {
-						return self.registers[index as usize];
-					}
+			},
+			EOperatingMode::UndefinedMode => match index {
+				13 => self.r13_und,
+				14 => self.r14_und,
+				_ => {
+					return self.registers[index as usize];
 				}
-			}
+			},
 			_ => {
 				return self.registers[index as usize];
 			}
@@ -154,56 +153,46 @@ impl CPU {
 	pub fn set_register_value(&mut self, index: u8, value: u32) {
 		let mode = self.get_operating_mode();
 		match mode {
-			EOperatingMode::FiqMode => {
-				match index {
-					8 => self.r8_fiq = value,
-					9 => self.r9_fiq = value,
-					10 => self.r10_fiq = value,
-					11 => self.r11_fiq = value,
-					12 => self.r12_fiq = value,
-					13 => self.r13_fiq = value,
-					14 => self.r14_fiq = value,
-					_ => {
-						self.registers[index as usize] = value;
-					}
+			EOperatingMode::FiqMode => match index {
+				8 => self.r8_fiq = value,
+				9 => self.r9_fiq = value,
+				10 => self.r10_fiq = value,
+				11 => self.r11_fiq = value,
+				12 => self.r12_fiq = value,
+				13 => self.r13_fiq = value,
+				14 => self.r14_fiq = value,
+				_ => {
+					self.registers[index as usize] = value;
 				}
-			}
-			EOperatingMode::IrqMode => {
-				match index {
-					13 => self.r13_irq = value,
-					14 => self.r14_irq = value,
-					_ => {
-						self.registers[index as usize] = value;
-					}
+			},
+			EOperatingMode::IrqMode => match index {
+				13 => self.r13_irq = value,
+				14 => self.r14_irq = value,
+				_ => {
+					self.registers[index as usize] = value;
 				}
-			}
-			EOperatingMode::SupervisorMode => {
-				match index {
-					13 => self.r13_svc = value,
-					14 => self.r14_svc = value,
-					_ => {
-						self.registers[index as usize] = value;
-					}
+			},
+			EOperatingMode::SupervisorMode => match index {
+				13 => self.r13_svc = value,
+				14 => self.r14_svc = value,
+				_ => {
+					self.registers[index as usize] = value;
 				}
-			}
-			EOperatingMode::AbortMode => {
-				match index {
-					13 => self.r13_abt = value,
-					14 => self.r14_abt = value,
-					_ => {
-						self.registers[index as usize] = value;
-					}
+			},
+			EOperatingMode::AbortMode => match index {
+				13 => self.r13_abt = value,
+				14 => self.r14_abt = value,
+				_ => {
+					self.registers[index as usize] = value;
 				}
-			}
-			EOperatingMode::UndefinedMode => {
-				match index {
-					13 => self.r13_und = value,
-					14 => self.r14_und = value,
-					_ => {
-						self.registers[index as usize] = value;
-					}
+			},
+			EOperatingMode::UndefinedMode => match index {
+				13 => self.r13_und = value,
+				14 => self.r14_und = value,
+				_ => {
+					self.registers[index as usize] = value;
 				}
-			}
+			},
 			_ => {
 				self.registers[index as usize] = value;
 			}
@@ -225,7 +214,7 @@ impl CPU {
 			EOperatingMode::SupervisorMode => &self.spsr_svc,
 			EOperatingMode::AbortMode => &self.spsr_abt,
 			EOperatingMode::UndefinedMode => &self.spsr_und,
-			_ => &self.cpsr
+			_ => &self.cpsr,
 		}
 	}
 
@@ -236,7 +225,7 @@ impl CPU {
 			EOperatingMode::SupervisorMode => &mut self.spsr_svc,
 			EOperatingMode::AbortMode => &mut self.spsr_abt,
 			EOperatingMode::UndefinedMode => &mut self.spsr_und,
-			_ => &mut self.cpsr
+			_ => &mut self.cpsr,
 		}
 	}
 

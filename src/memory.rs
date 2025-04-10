@@ -20,9 +20,7 @@ impl MemoryBus {
 	}
 
 	pub fn read_16(&self, address: u32) -> u16 {
-		unsafe {
-			*(self.memory.as_ptr().offset(address as isize) as *mut u16) as u16
-		}
+		unsafe { *(self.memory.as_ptr().offset(address as isize) as *mut u16) as u16 }
 	}
 
 	pub fn write_16(&mut self, address: u32, value: u16) {
@@ -32,9 +30,7 @@ impl MemoryBus {
 	}
 
 	pub fn read_32(&self, address: u32) -> u32 {
-		unsafe {
-			*(self.memory.as_ptr().offset(address as isize) as *mut u32) as u32
-		}
+		unsafe { *(self.memory.as_ptr().offset(address as isize) as *mut u32) as u32 }
 	}
 
 	pub fn write_32(&mut self, address: u32, value: u32) {

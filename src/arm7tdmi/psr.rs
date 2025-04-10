@@ -1,16 +1,14 @@
 use bitvec::prelude::*;
-use num_traits::{ToPrimitive, PrimInt};
+use num_traits::ToPrimitive;
 
-use crate::arm7tdmi::{EOperatingMode, GbaRegisterBits, Gba32BitSlice};
+use crate::arm7tdmi::{EOperatingMode, Gba32BitSlice, GbaRegisterBits};
 
 #[derive(Clone)]
 pub struct CPSR(GbaRegisterBits);
 
 impl CPSR {
 	pub fn new() -> Self {
-		let mut result = Self {
-			0: bitarr![Lsb0, u32; 0; 32],
-		};
+		let mut result = Self { 0: bitarr![Lsb0, u32; 0; 32] };
 		result.set_mode_bits(EOperatingMode::SystemMode.to_u8().unwrap());
 
 		return result;

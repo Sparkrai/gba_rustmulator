@@ -2,11 +2,12 @@ use bitvec::order::Lsb0;
 use bitvec::prelude::BitView;
 use num_traits::PrimInt;
 
-use crate::arm7tdmi::cpu::{CPU, PROGRAM_COUNTER_REGISTER};
-use crate::arm7tdmi::EShiftType;
+use crate::arm7tdmi::cpu::{CPU, PROGRAM_COUNTER_REGISTER, STACK_POINTER_REGISTER};
+use crate::arm7tdmi::{sign_extend, EShiftType};
 use crate::memory::MemoryBus;
 
 pub fn operate_thumb(instruction: u16, cpu: &mut CPU, bus: &mut MemoryBus) {
+	// ADD / SUB register
 	if (0xf800 & instruction) == 0x1800 {
 		let is_sub = (0x0200 & instruction) != 0;
 		let i = (0x0400 & instruction) != 0;
@@ -45,11 +46,12 @@ pub fn operate_thumb(instruction: u16, cpu: &mut CPU, bus: &mut MemoryBus) {
 			cpu.get_mut_cpsr().set_v(overflow);
 		}
 	} else if (0xe000 & instruction) == 0x0000 {
+		// Move shifted register (LSL/LSR/ASR)
 		let shift_type = match (0x1800 & instruction) >> 11 {
 			0x0 => EShiftType::LSL,
 			0x1 => EShiftType::LSR,
 			0x2 => EShiftType::ASR,
-			_ => panic!("ERROR!!!")
+			_ => panic!("ERROR!!!"),
 		};
 
 		let offset = (0x07c0 & instruction) >> 6;
@@ -94,10 +96,13 @@ pub fn operate_thumb(instruction: u16, cpu: &mut CPU, bus: &mut MemoryBus) {
 			}
 		}
 
+		cpu.set_register_value(rd_index, alu_out);
+
 		cpu.get_mut_cpsr().set_n((alu_out & 0x800_0000) > 0);
 		cpu.get_mut_cpsr().set_z(alu_out == 0);
 		cpu.get_mut_cpsr().set_c(shifter_carry_out);
 	} else if (0xe000 & instruction) == 0x2000 {
+		// ALU immediate
 		let rd_index = ((0x0700 & instruction) >> 8) as u8;
 		let rd = cpu.get_register_value(rd_index);
 		let operand = (0x00ff & instruction) as u32;
@@ -150,9 +155,10 @@ pub fn operate_thumb(instruction: u16, cpu: &mut CPU, bus: &mut MemoryBus) {
 				cpu.get_mut_cpsr().set_c(!borrowed);
 				cpu.get_mut_cpsr().set_v(overflow);
 			}
-			_ => panic!("ERROR!!!")
+			_ => panic!("ERROR!!!"),
 		}
 	} else if (0xfc00 & instruction) == 0x4000 {
+		// ALU register
 		let rm = cpu.get_register_value(((0x0038 & instruction) >> 3) as u8);
 		let rd_index = (0x0007 & instruction) as u8;
 		let rd = cpu.get_register_value(rd_index);
@@ -385,9 +391,172 @@ pub fn operate_thumb(instruction: u16, cpu: &mut CPU, bus: &mut MemoryBus) {
 				cpu.get_mut_cpsr().set_n((alu_out & 0x800_0000) > 0);
 				cpu.get_mut_cpsr().set_z(alu_out == 0);
 			}
-			_ => panic!("ERROR!!!")
+			_ => panic!("ERROR!!!"),
+		}
+	} else if (0xf800 & instruction) == 0x4800 {
+		// LDR PC relative
+		let rd_index = ((instruction & 0x0700) >> 8) as u8;
+		let operand = instruction & 0x00ff;
+
+		let address = (cpu.get_register_value(PROGRAM_COUNTER_REGISTER) & 0xffff_fffc) + (operand * 4) as u32;
+		cpu.set_register_value(rd_index, bus.read_32(address));
+	} else if (0xf200 & instruction) == 0x5000 {
+		// LDR/STR with register offset
+		let l = (0x0800 & instruction) != 0;
+		let b = (0x0400 & instruction) != 0;
+
+		let rm = cpu.get_register_value(((0x01c0 & instruction) >> 6) as u8);
+		let rn = cpu.get_register_value(((0x0038 & instruction) >> 3) as u8);
+		let rd_index = (0x0007 & instruction) as u8;
+
+		let address = rn + rm;
+		if l {
+			let data;
+			if b {
+				data = bus.read_8(address) as u32;
+			} else {
+				if (address & 0x0000_0003) == 0 {
+					data = bus.read_32(address);
+				} else {
+					// NOTE: Forced alignment and rotation of data! (UNPREDICTABLE)
+					data = bus.read_32(address & !0x0000_0003).rotate_right((address & 0x0000_0003) * 8);
+				}
+			}
+			cpu.set_register_value(rd_index, data);
+		} else {
+			let rd = cpu.get_register_value(rd_index);
+			if b {
+				bus.write_8(address, rd as u8);
+			} else {
+				// NOTE: Forced alignment! (UNPREDICTABLE)
+				bus.write_32(address & !0x0000_0003, rd);
+			}
+		}
+	} else if (0xf200 & instruction) == 0x5200 {
+		// LDR/STR sign-extended byte/halfword
+		let rm = cpu.get_register_value(((0x01c0 & instruction) >> 6) as u8);
+		let rn = cpu.get_register_value(((0x0038 & instruction) >> 3) as u8);
+		let rd_index = (0x0007 & instruction) as u8;
+
+		let address = rn + rm;
+		let op = (0x0c00 & instruction) >> 10;
+
+		// STRH
+		if op == 0 {
+			let rd = cpu.get_register_value(rd_index);
+			// NOTE: Forced alignment! (UNPREDICTABLE)
+			bus.write_16(address & !0x0000_0001, rd as u16);
+		} else {
+			let data;
+			match op {
+				// LDSB
+				0x1 => {
+					data = sign_extend(bus.read_8(address)) as u32;
+				}
+				// LDRH
+				0x2 => {
+					if (address & 0x0000_0001) == 0 {
+						data = bus.read_16(address) as u32;
+					} else {
+						// NOTE: Forced alignment and rotation of data! (UNPREDICTABLE)
+						data = bus.read_16(address & !0x0000_0001).rotate_right(8) as u32;
+					}
+				}
+				// LDSH
+				0x3 => {
+					if (address & 0x0000_0001) == 0 {
+						data = sign_extend(bus.read_16(address)) as u32;
+					} else {
+						// NOTE: Read byte! (UNPREDICTABLE)
+						data = sign_extend(bus.read_8(address)) as u32;
+					}
+				}
+				_ => panic!("IMPOSSIBLE"),
+			}
+
+			cpu.set_register_value(rd_index, data);
+		}
+	} else if (0xe000 & instruction) == 0x6000 {
+		// LDR/STR with immediate offset
+		let b = (0x1000 & instruction) != 0;
+		let l = (0x0800 & instruction) != 0;
+
+		let offset = ((0x07c0 & instruction) >> 6) as u32;
+		let rn = cpu.get_register_value(((0x0038 & instruction) >> 3) as u8);
+		let rd_index = (0x0007 & instruction) as u8;
+
+		let address = if b { rn + (offset * 4) } else { rn + offset };
+		if l {
+			let data;
+			if b {
+				data = bus.read_8(address) as u32;
+			} else {
+				if (address & 0x0000_0003) == 0 {
+					data = bus.read_32(address);
+				} else {
+					// NOTE: Forced alignment and rotation of data! (UNPREDICTABLE)
+					data = bus.read_32(address & !0x0000_0003).rotate_right((address & 0x0000_0003) * 8);
+				}
+			}
+
+			cpu.set_register_value(rd_index, data);
+		} else {
+			let rd = cpu.get_register_value(rd_index);
+			if b {
+				bus.write_8(address, rd as u8);
+			} else {
+				// NOTE: Forced alignment! (UNPREDICTABLE)
+				bus.write_32(address & !0x0000_0003, rd);
+			}
+		}
+	} else if (0xf000 & instruction) == 0x8000 {
+		// LDR/STR halfword with immediate offset
+		let l = (0x0800 & instruction) != 0;
+
+		let offset = ((0x07c0 & instruction) >> 6) as u32;
+		let rn = cpu.get_register_value(((0x0038 & instruction) >> 3) as u8);
+		let rd_index = (0x0007 & instruction) as u8;
+
+		let address = rn + (offset * 2);
+		if l {
+			let data;
+			if (address & 0x0000_0001) == 0 {
+				data = bus.read_16(address) as u32;
+			} else {
+				// NOTE: Forced alignment and rotation of data! (UNPREDICTABLE)
+				data = bus.read_16(address & !0x0000_0001).rotate_right(8) as u32;
+			}
+
+			cpu.set_register_value(rd_index, data);
+		} else {
+			let rd = cpu.get_register_value(rd_index);
+			// NOTE: Forced alignment! (UNPREDICTABLE)
+			bus.write_16(address & !0x0000_0001, rd as u16);
+		}
+	} else if (0xf000 & instruction) == 0x9000 {
+		// LDR/STR SP relative
+		let l = (0x0800 & instruction) != 0;
+
+		let offset = (0x00ff & instruction) as u32;
+		let rd_index = (0x0700 & instruction) as u8;
+
+		let address = cpu.get_register_value(STACK_POINTER_REGISTER) + (offset * 4);
+		if l {
+			let data;
+			if (address & 0x0000_0003) == 0 {
+				data = bus.read_32(address);
+			} else {
+				// NOTE: Forced alignment and rotation of data! (UNPREDICTABLE)
+				data = bus.read_32(address & !0x0000_0003).rotate_right((address & 0x0000_0003) * 8);
+			}
+
+			cpu.set_register_value(rd_index, data);
+		} else {
+			let rd = cpu.get_register_value(rd_index);
+			// NOTE: Forced alignment! (UNPREDICTABLE)
+			bus.write_32(address & !0x0000_0003, rd);
 		}
 	}
 
-	cpu.set_register_value(PROGRAM_COUNTER_REGISTER, cpu.get_register_value(PROGRAM_COUNTER_REGISTER) - 2);
+	cpu.set_register_value(PROGRAM_COUNTER_REGISTER, cpu.get_current_pc() + 2);
 }

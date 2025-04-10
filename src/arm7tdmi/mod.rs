@@ -1,16 +1,16 @@
 use bitvec::array::BitArray;
 use bitvec::order::Lsb0;
-use bitvec::prelude::{BitSlice, BitView};
-use num_traits::{FromPrimitive, PrimInt};
-
-use crate::arm7tdmi::cpu::{CPU, LINK_REGISTER_REGISTER, PROGRAM_COUNTER_REGISTER};
-use crate::memory::MemoryBus;
+use bitvec::prelude::BitSlice;
 use num_derive::*;
+use num_traits::{AsPrimitive, PrimInt};
 
+use crate::arm7tdmi::cpu::CPU;
+use crate::memory::MemoryBus;
+
+mod arm;
 pub mod cpu;
 mod psr;
 mod thumb;
-mod arm;
 
 pub type Gba32BitSlice = BitSlice<Lsb0, u32>;
 pub type GbaRegisterBits = BitArray<Lsb0, [u32; 1]>;
@@ -34,22 +34,25 @@ pub enum EShiftType {
 	ROR,
 }
 
-fn sign_extend(x: u32) -> i32 {
-	(x as i32 ^ 0x80_0000) - 0x80_0000
+fn sign_extend<T>(x: T) -> i32
+where
+	T: PrimInt + AsPrimitive<i32>,
+{
+	let bit = (1u32 << (31 - x.leading_zeros())) as i32;
+	(x.as_() ^ bit) - bit
 }
 
 pub fn decode(cpu: &mut CPU, bus: &mut MemoryBus) {
 	// NOTE: Read CPU state
+	let pc = cpu.get_current_pc();
 	if cpu.get_cpsr().get_t() {
-		let pc = cpu.get_register_value(PROGRAM_COUNTER_REGISTER) - 4;
 		let instruction = bus.read_16(pc);
-//		print_assembly_line(disassemble_thumb(instruction), pc);
+		//		print_assembly_line(disassemble_thumb(instruction), pc);
 
 		thumb::operate_thumb(instruction, cpu, bus);
 	} else {
-		let pc = cpu.get_register_value(PROGRAM_COUNTER_REGISTER) - 8;
 		let instruction = bus.read_32(pc);
-//		print_assembly_line(disassemble_arm(instruction), pc);
+		//		print_assembly_line(disassemble_arm(instruction), pc);
 
 		arm::operate_arm(cpu, bus, instruction);
 	}
