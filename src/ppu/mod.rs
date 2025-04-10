@@ -98,9 +98,9 @@ impl Color {
 		let lb = f32::powf(b as f32 / 31.0, LCD_GAMMA);
 		let lg = f32::powf(g as f32 / 31.0, LCD_GAMMA);
 		let lr = f32::powf(r as f32 / 31.0, LCD_GAMMA);
-		let red = f32::powf((0.0 * lb + 50.0 * lg + 255.0 * lr) / 255.0, 1.0 / OUT_GAMMA) * (0xffff * 255 / 280) as f32;
-		let green = f32::powf((30.0 * lb + 230.0 * lg + 10.0 * lr) / 255.0, 1.0 / OUT_GAMMA) * (0xffff * 255 / 280) as f32;
-		let blue = f32::powf((220.0 * lb + 10.0 * lg + 50.0 * lr) / 255.0, 1.0 / OUT_GAMMA) * (0xffff * 255 / 280) as f32;
+		let red = f32::powf(0.0 * lb + (50.0 / 255.0) * lg + 1.0 * lr, 1.0 / OUT_GAMMA) * (255.0 / 280.0);
+		let green = f32::powf((30.0 / 255.0) * lb + (230.0 / 255.0) * lg + (10.0 / 255.0) * lr, 1.0 / OUT_GAMMA) * (255.0 / 280.0);
+		let blue = f32::powf((220.0 / 255.0) * lb + (10.0 / 255.0) * lg + (50.0 / 255.0) * lr, 1.0 / OUT_GAMMA) * (255.0 / 280.0);
 
 		Self { red, green, blue }
 	}
@@ -143,8 +143,8 @@ impl<'a> SpriteEntry<'a> {
 		Self { 0: registers }
 	}
 
-	pub fn get_y_coord(&self) -> i8 {
-		self.0[0..8].load_le::<u8>() as i8
+	pub fn get_y_coord(&self) -> i32 {
+		self.0[0..8].load_le::<u8>() as i8 as i32
 	}
 
 	pub fn get_is_affine(&self) -> bool {
@@ -187,11 +187,11 @@ impl<'a> SpriteEntry<'a> {
 		}
 	}
 
-	pub fn get_x_coord(&self) -> i16 {
-		sign_extend(self.0[0x10..0x19].load_le::<u16>(), 10) as i16
+	pub fn get_x_coord(&self) -> i32 {
+		sign_extend(self.0[0x10..0x19].load_le::<u16>(), 10) as i32
 	}
 
-	pub fn get_rotation_data_index(&self) -> u8 {
+	pub fn get_affine_matrix_index(&self) -> usize {
 		self.0[0x19..0x1d].load_le()
 	}
 
@@ -213,10 +213,6 @@ impl<'a> SpriteEntry<'a> {
 
 	pub fn get_palette_number(&self) -> u8 {
 		self.0[0x2c..=0x2f].load_le()
-	}
-
-	pub fn get_transform(&self) -> BgTransformFloat {
-		BgTransformFloat::new(&self.0[0x2c..=0x2f])
 	}
 }
 
@@ -396,12 +392,12 @@ impl PPU {
 		BgPixelIncrement::new(self.registers[BG2_PD_RANGE].view_bits())
 	}
 
-	fn get_bg2_x(&self) -> BgTransformFloat {
-		BgTransformFloat::new(self.registers[BG2_X_RANGE].view_bits())
+	fn get_bg2_x(&self) -> AffineBgPositionFloat {
+		AffineBgPositionFloat::new(self.registers[BG2_X_RANGE].view_bits())
 	}
 
-	fn get_bg2_y(&self) -> BgTransformFloat {
-		BgTransformFloat::new(self.registers[BG2_Y_RANGE].view_bits())
+	fn get_bg2_y(&self) -> AffineBgPositionFloat {
+		AffineBgPositionFloat::new(self.registers[BG2_Y_RANGE].view_bits())
 	}
 
 	fn get_bg3_pa(&self) -> BgPixelIncrement {
@@ -420,12 +416,12 @@ impl PPU {
 		BgPixelIncrement::new(self.registers[BG3_PD_RANGE].view_bits())
 	}
 
-	fn get_bg3_x(&self) -> BgTransformFloat {
-		BgTransformFloat::new(self.registers[BG3_X_RANGE].view_bits())
+	fn get_bg3_x(&self) -> AffineBgPositionFloat {
+		AffineBgPositionFloat::new(self.registers[BG3_X_RANGE].view_bits())
 	}
 
-	fn get_bg3_y(&self) -> BgTransformFloat {
-		BgTransformFloat::new(self.registers[BG3_Y_RANGE].view_bits())
+	fn get_bg3_y(&self) -> AffineBgPositionFloat {
+		AffineBgPositionFloat::new(self.registers[BG3_Y_RANGE].view_bits())
 	}
 
 	fn get_win0_dimensions(&self) -> WindowDimensions {
@@ -515,42 +511,100 @@ impl PPU {
 						let tile_length = if sprite.get_is_256_palette() { 64 } else { 32 };
 						let start_tile_address = SPRITE_TILES_START_ADDRESS + sprite.get_tile_index() as usize * 32;
 
-						for tx in 0..width / 8 {
-							for ty in 0..height / 8 {
-								let tile_address = if is_1d_mapping {
-									let tile = tx + ty * width / 8;
-									start_tile_address + tile * tile_length
-								} else {
-									let tile = tx + ty * tiles_per_row;
-									start_tile_address + tile * tile_length
-								};
+						if sprite.get_is_affine() {
+							let pixel_x0 = (width / 2) as i32;
+							let pixel_y0 = (height / 2) as i32;
 
-								for x in 0..8 {
-									for y in 0..8 {
-										let tile_pixel = x + y * 8;
+							let affine_matrix_starting_address = sprite.get_affine_matrix_index() * 32;
+							let pa = AffineMatrixFloat::new(self.oam[affine_matrix_starting_address + 0x6..=affine_matrix_starting_address + 0x7].view_bits::<Lsb0>()).get_value();
+							let pb = AffineMatrixFloat::new(self.oam[affine_matrix_starting_address + 0xe..=affine_matrix_starting_address + 0xf].view_bits::<Lsb0>()).get_value();
+							let pc =
+								AffineMatrixFloat::new(self.oam[affine_matrix_starting_address + 0x16..=affine_matrix_starting_address + 0x17].view_bits::<Lsb0>()).get_value();
+							let pd =
+								AffineMatrixFloat::new(self.oam[affine_matrix_starting_address + 0x1e..=affine_matrix_starting_address + 0x1f].view_bits::<Lsb0>()).get_value();
+
+							let half_width = if sprite.get_is_virtual_double_sized() { width as i32 } else { pixel_x0 }; // half-width of object screen canvas
+							let half_height = if sprite.get_is_virtual_double_sized() { height as i32 } else { pixel_y0 }; // half-height of object screen canvas
+							for y in -half_height..half_height {
+								for x in -half_width..half_width {
+									let pixel_x = pixel_x0 + ((pa * x + pb * y) >> 8);
+									let pixel_y = pixel_y0 + ((pc * x + pd * y) >> 8);
+									let screen_x = sprite.get_x_coord() + x;
+									let screen_y = sprite.get_y_coord() + y;
+
+									// Y has range -127/127 (within 160 vertical screen size)
+									if screen_x >= 0 && screen_y >= 0 && screen_x < 240 && pixel_x >= 0 && pixel_x < width as i32 && pixel_y >= 0 && pixel_y < height as i32 {
+										let pixel_index = (screen_x as usize + (screen_y as usize * 240)) * 3;
+
+										let tx = pixel_x as usize / 8;
+										let ty = pixel_y as usize / 8;
+										let tile_address = if is_1d_mapping {
+											let tile = tx + ty * width / 8;
+											start_tile_address + tile * tile_length
+										} else {
+											let tile = tx + ty * tiles_per_row;
+											start_tile_address + tile * tile_length
+										};
+
+										let tile_pixel = ((pixel_x % 8) + (pixel_y % 8) * 8) as usize;
 										let palette_entry = (self.vram[tile_address + tile_pixel]) as usize;
 
 										if palette_entry != 0 {
-											let pixel_x = sprite.get_x_coord() + (x + tx * 8) as i16;
-											let pixel_y = sprite.get_y_coord() + (y + ty * 8) as i8;
+											let color;
+											if sprite.get_is_256_palette() {
+												color = Color::new((self.palette_ram[256 + palette_entry * 2 + 1] as u16) << 8 | self.palette_ram[256 + palette_entry * 2] as u16);
+											} else {
+												let palette_offset = sprite.get_palette_number() as usize * 16;
+												let color_address = 256 + (palette_offset + palette_entry) * 2;
+												color = Color::new((self.palette_ram[color_address + 1] as u16) << 8 | self.palette_ram[color_address] as u16);
+											}
 
-											// Y has range -127/127 (within 160 vertical screen size)
-											if pixel_x >= 0 && pixel_y >= 0 && pixel_x < 240 {
-												let pixel_index = (pixel_x as usize + (pixel_y as usize * 240)) * 3;
+											pixels[pixel_index] = color.get_red();
+											pixels[pixel_index + 1] = color.get_green();
+											pixels[pixel_index + 2] = color.get_blue();
+										}
+									}
+								}
+							}
+						} else {
+							for tx in 0..width / 8 {
+								for ty in 0..height / 8 {
+									let tile_address = if is_1d_mapping {
+										let tile = tx + ty * width / 8;
+										start_tile_address + tile * tile_length
+									} else {
+										let tile = tx + ty * tiles_per_row;
+										start_tile_address + tile * tile_length
+									};
 
-												let color;
-												if sprite.get_is_256_palette() {
-													color =
-														Color::new((self.palette_ram[256 + palette_entry * 2 + 1] as u16) << 8 | self.palette_ram[256 + palette_entry * 2] as u16);
-												} else {
-													let palette_offset = sprite.get_palette_number() as usize * 16;
-													let color_address = 256 + (palette_offset + palette_entry) * 2;
-													color = Color::new((self.palette_ram[color_address + 1] as u16) << 8 | self.palette_ram[color_address] as u16);
+									for x in 0..8 {
+										for y in 0..8 {
+											let tile_pixel = x + y * 8;
+											let palette_entry = (self.vram[tile_address + tile_pixel]) as usize;
+
+											if palette_entry != 0 {
+												let screen_x = sprite.get_x_coord() + (x + tx * 8) as i32;
+												let screen_y = sprite.get_y_coord() + (y + ty * 8) as i32;
+
+												// Y has range -127/127 (within 160 vertical screen size)
+												if screen_x >= 0 && screen_y >= 0 && screen_x < 240 {
+													let pixel_index = (screen_x as usize + (screen_y as usize * 240)) * 3;
+
+													let color;
+													if sprite.get_is_256_palette() {
+														color = Color::new(
+															(self.palette_ram[256 + palette_entry * 2 + 1] as u16) << 8 | self.palette_ram[256 + palette_entry * 2] as u16,
+														);
+													} else {
+														let palette_offset = sprite.get_palette_number() as usize * 16;
+														let color_address = 256 + (palette_offset + palette_entry) * 2;
+														color = Color::new((self.palette_ram[color_address + 1] as u16) << 8 | self.palette_ram[color_address] as u16);
+													}
+
+													pixels[pixel_index] = color.get_red();
+													pixels[pixel_index + 1] = color.get_green();
+													pixels[pixel_index + 2] = color.get_blue();
 												}
-
-												pixels[pixel_index] = color.get_red();
-												pixels[pixel_index + 1] = color.get_green();
-												pixels[pixel_index + 2] = color.get_blue();
 											}
 										}
 									}
@@ -733,9 +787,9 @@ impl<'a> BgPixelIncrement<'a> {
 	}
 }
 
-struct SpriteTransformFloat<'a>(&'a Gba8BitSlice);
+struct AffineMatrixFloat<'a>(&'a Gba8BitSlice);
 
-impl<'a> SpriteTransformFloat<'a> {
+impl<'a> AffineMatrixFloat<'a> {
 	pub fn new(register: &'a Gba8BitSlice) -> Self {
 		Self { 0: register }
 	}
@@ -744,29 +798,25 @@ impl<'a> SpriteTransformFloat<'a> {
 		self.0[0..=7].load_le()
 	}
 
-	pub fn get_integer(&self) -> u32 {
-		self.0[8..=0xe].load_le()
+	pub fn get_integer(&self) -> i32 {
+		self.0[8..=0xf].load_le::<u8>() as i8 as i32
 	}
 
-	pub fn get_is_negative(&self) -> bool {
-		self.0[0xf]
+	pub fn get_value(&self) -> i32 {
+		self.0.load_le::<u16>() as i16 as i32
 	}
 
-	pub fn get_value(&self) -> f32 {
+	pub fn get_float_value(&self) -> f32 {
 		let mut result = self.get_integer() as f32;
 		result += self.get_fractional() as f32 * 1.0 / 256.0;
-
-		if self.get_is_negative() {
-			result *= -1.0;
-		}
 
 		result
 	}
 }
 
-struct BgTransformFloat<'a>(&'a Gba8BitSlice);
+struct AffineBgPositionFloat<'a>(&'a Gba8BitSlice);
 
-impl<'a> BgTransformFloat<'a> {
+impl<'a> AffineBgPositionFloat<'a> {
 	pub fn new(register: &'a Gba8BitSlice) -> Self {
 		Self { 0: register }
 	}
@@ -775,21 +825,13 @@ impl<'a> BgTransformFloat<'a> {
 		self.0[0..=7].load_le()
 	}
 
-	pub fn get_integer(&self) -> u32 {
-		self.0[8..=26].load_le()
-	}
-
-	pub fn get_is_negative(&self) -> bool {
-		self.0[27]
+	pub fn get_integer(&self) -> i32 {
+		sign_extend(self.0[8..=27].load_le::<u32>(), 20)
 	}
 
 	pub fn get_value(&self) -> f32 {
 		let mut result = self.get_integer() as f32;
 		result += self.get_fractional() as f32 * 1.0 / 256.0;
-
-		if self.get_is_negative() {
-			result *= -1.0;
-		}
 
 		result
 	}

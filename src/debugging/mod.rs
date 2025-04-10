@@ -127,20 +127,31 @@ pub fn build_tiles_debug_window(bus: &SystemBus, show_tiles_window: &mut bool, i
 				}
 
 				let color = Color::new(bus.ppu.read_16(PALETTE_RAM_ADDR + palette_index * 2));
-				imgui::ColorButton::new(
-					im_str!(""),
-					[color.get_red() as f32 / 255.0, color.get_green() as f32 / 255.0, color.get_blue() as f32 / 255.0, 1.0],
-				)
-				.border(false)
-				.size([6.0, 6.0])
-				.tooltip(true)
-				.build(&ui);
+				imgui::ColorButton::new(im_str!(""), [color.get_red(), color.get_green(), color.get_blue(), 1.0])
+					.border(false)
+					.size([6.0, 6.0])
+					.tooltip(true)
+					.build(&ui);
 			}
 
 			ui.checkbox(im_str!("256 Colors"), is_palette);
 			if let Some(child_token) = ChildWindow::new(im_str!("##memory")).begin(&ui) {
 				Image::new(texture_id, [256.0, 384.0]).build(&ui);
 				child_token.end(&ui);
+			}
+		});
+}
+
+pub fn build_sprites_debug_window(bus: &SystemBus, show_sprites_window: &mut bool, texture_ids: &[TextureId], ui: &&mut Ui) {
+	Window::new(im_str!("Sprites"))
+		.size([0.0, 0.0], Condition::FirstUseEver)
+		.opened(show_sprites_window)
+		.position([1400.0, 75.0], Condition::FirstUseEver)
+		.build(ui, || {
+			ui.columns(16, im_str!(""), true);
+			for texture_id in texture_ids {
+				Image::new(*texture_id, [16.0, 16.0]).build(&ui);
+				ui.next_column();
 			}
 		});
 }

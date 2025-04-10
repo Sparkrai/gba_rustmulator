@@ -484,7 +484,7 @@ pub fn operate_thumb(instruction: u16, cpu: &mut CPU, bus: &mut SystemBus) {
 			match op {
 				// LDSB
 				0x1 => {
-					data = sign_extend(bus.read_8(address), 8) as u32;
+					data = bus.read_8(address) as i8 as u32;
 				}
 				// LDRH
 				0x2 => {
@@ -498,10 +498,10 @@ pub fn operate_thumb(instruction: u16, cpu: &mut CPU, bus: &mut SystemBus) {
 				// LDSH
 				0x3 => {
 					if (address & 0x0000_0001) == 0 {
-						data = sign_extend(bus.read_16(address), 16) as u32;
+						data = bus.read_16(address) as i16 as u32;
 					} else {
 						// NOTE: Read byte! (UNPREDICTABLE)
-						data = sign_extend(bus.read_8(address), 8) as u32;
+						data = bus.read_8(address) as i8 as u32;
 					}
 				}
 				_ => panic!("IMPOSSIBLE"),
@@ -718,7 +718,7 @@ pub fn operate_thumb(instruction: u16, cpu: &mut CPU, bus: &mut SystemBus) {
 		// Conditional Branch
 		let cond = ((0x0f00 & instruction) >> 8) as u8;
 		if cond_passed(cpu, cond) {
-			let offset = sign_extend(instruction & 0x00ff, 8) << 1;
+			let offset = ((instruction & 0x00ff) as i8 as i32) << 1;
 
 			cpu.set_register_value(
 				PROGRAM_COUNTER_REGISTER,

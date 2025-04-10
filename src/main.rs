@@ -1,6 +1,7 @@
 use std::fs::{File, OpenOptions};
 use std::io::{Read, Write};
 
+use bitvec::prelude::*;
 use glium;
 use imgui::*;
 
@@ -8,8 +9,8 @@ use arm7tdmi::cpu::*;
 use system::*;
 
 use crate::debugging::disassembling::disassemble_instruction;
-use crate::debugging::{build_cpu_debug_window, build_io_registers_window, build_memory_debug_window, build_tiles_debug_window};
-use crate::ppu::{Color, EVideoMode, PALETTE_RAM_SIZE, VRAM_SIZE};
+use crate::debugging::{build_cpu_debug_window, build_io_registers_window, build_memory_debug_window, build_sprites_debug_window, build_tiles_debug_window};
+use crate::ppu::{Color, EVideoMode, SpriteEntry, OAM_SIZE, PALETTE_RAM_SIZE, SPRITE_TILES_START_ADDRESS, VRAM_SIZE};
 use crate::windowing::System;
 use glium::glutin::event::{Event, WindowEvent};
 use glium::glutin::event_loop::ControlFlow;
@@ -44,12 +45,14 @@ fn main() {
 		if cartridge_data.len() < CARTRIDGE_ROM_SIZE {
 			cartridge_data.resize(CARTRIDGE_ROM_SIZE - cartridge_data.len(), 0);
 		}
-		let mut bus = SystemBus::new_with_cartridge(bios_data.into_boxed_slice(), cartridge_data.into_boxed_slice());
+		//		let mut bus = SystemBus::new_with_cartridge(bios_data.into_boxed_slice(), cartridge_data.into_boxed_slice());
+		let mut bus = SystemBus::new(bios_data.into_boxed_slice());
 
 		let mut show_cpu_debug_window = true;
 		let mut show_memory_debug_window = true;
 		let mut show_io_registers_window = true;
 		let mut show_tiles_window = true;
+		let mut show_sprites_window = true;
 		let mut show_demo_window = false;
 
 		let mut debug_mode = true;
@@ -199,6 +202,9 @@ fn main() {
 							if MenuItem::new(im_str!("Tiles")).build(&ui) {
 								show_tiles_window = true;
 							}
+							if MenuItem::new(im_str!("Sprites")).build(&ui) {
+								show_tiles_window = true;
+							}
 						});
 						ui.menu(im_str!("Help"), true, || {
 							if MenuItem::new(im_str!("Demo")).build(&ui) {
@@ -292,6 +298,83 @@ fn main() {
 						let texture_id = renderer.textures().insert(texture);
 
 						build_tiles_debug_window(&bus, &mut show_tiles_window, &mut tiles_is_palette, texture_id, &&mut ui);
+					}
+
+					if show_sprites_window {
+						let obj_tiles_start = match bus.ppu.get_disp_cnt().get_bg_mode() {
+							EVideoMode::Mode0 | EVideoMode::Mode1 | EVideoMode::Mode2 => 0x10000,
+							EVideoMode::Mode3 | EVideoMode::Mode4 | EVideoMode::Mode5 => 0x14000,
+						};
+
+						let is_1d_mapping = bus.ppu.get_disp_cnt().get_sprite_1d_mapping();
+						let mut texture_ids = Vec::<TextureId>::with_capacity(128);
+						for i in (0..OAM_SIZE as u32).step_by(8) {
+							let data = [
+								bus.ppu.read_8(OAM_ADDR + i),
+								bus.ppu.read_8(OAM_ADDR + i + 1),
+								bus.ppu.read_8(OAM_ADDR + i + 2),
+								bus.ppu.read_8(OAM_ADDR + i + 3),
+								bus.ppu.read_8(OAM_ADDR + i + 4),
+								bus.ppu.read_8(OAM_ADDR + i + 5),
+							];
+							let sprite = SpriteEntry::new(data.view_bits::<Lsb0>());
+
+							let (width, height) = sprite.get_size();
+							let tiles_per_row = if sprite.get_is_256_palette() { 16 } else { 32 };
+							let tile_length = if sprite.get_is_256_palette() { 64 } else { 32 };
+							let start_tile_address = SPRITE_TILES_START_ADDRESS + sprite.get_tile_index() as usize * 32;
+
+							let mut pixels = vec![0.0; width * height * 3];
+							for tx in 0..width / 8 {
+								for ty in 0..height / 8 {
+									let tile_address = if is_1d_mapping {
+										let tile = tx + ty * width / 8;
+										start_tile_address + tile * tile_length
+									} else {
+										let tile = tx + ty * tiles_per_row;
+										start_tile_address + tile * tile_length
+									};
+
+									for x in 0..8 {
+										for y in 0..8 {
+											let tile_pixel = x + y * 8;
+											let palette_entry = bus.ppu.read_8(VRAM_ADDR + tile_address as u32 + tile_pixel) as u32;
+
+											let pixel_index = tx * 8 + ty * width + tile_pixel as usize * 3;
+
+											let color;
+											if sprite.get_is_256_palette() {
+												color = Color::new(bus.ppu.read_16(PALETTE_RAM_ADDR + palette_entry * 2));
+											} else {
+												let palette_offset = sprite.get_palette_number() as u32 * 16;
+												let color_address = 256 + (palette_offset + palette_entry) * 2;
+												color = Color::new(bus.ppu.read_16(PALETTE_RAM_ADDR + color_address));
+											}
+
+											pixels[pixel_index] = color.get_red();
+											pixels[pixel_index + 1] = color.get_green();
+											pixels[pixel_index + 2] = color.get_blue();
+										}
+									}
+								}
+							}
+
+							let mut image = glium::texture::RawImage2d::from_raw_rgb(pixels, (width as u32, height as u32));
+							let gl_texture = glium::texture::Texture2d::new(&display, image).unwrap();
+
+							let texture = imgui_glium_renderer::Texture {
+								texture: Rc::new(gl_texture),
+								sampler: SamplerBehavior {
+									wrap_function: (SamplerWrapFunction::BorderClamp, SamplerWrapFunction::BorderClamp, SamplerWrapFunction::BorderClamp),
+									..Default::default()
+								},
+							};
+							let texture_id = renderer.textures().insert(texture);
+
+							texture_ids.push(texture_id);
+						}
+
+						build_sprites_debug_window(&bus, &mut show_sprites_window, &texture_ids, &&mut ui);
 					}
 
 					if show_demo_window {

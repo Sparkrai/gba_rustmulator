@@ -364,10 +364,10 @@ pub fn operate_arm(cpu: &mut CPU, bus: &mut SystemBus, instruction: u32) {
 				if h {
 					if s {
 						if (address & 0x0000_0001) == 0 {
-							data = sign_extend(bus.read_16(address), 16) as u32;
+							data = bus.read_16(address) as i16 as u32;
 						} else {
 							// NOTE: Read byte! (UNPREDICTABLE)
-							data = sign_extend(bus.read_8(address), 8) as u32;
+							data = bus.read_8(address) as i8 as u32;
 						}
 					} else {
 						if (address & 0x0000_0001) == 0 {
@@ -379,7 +379,7 @@ pub fn operate_arm(cpu: &mut CPU, bus: &mut SystemBus, instruction: u32) {
 					}
 				} else {
 					// S
-					data = sign_extend(bus.read_8(address), 8) as u32;
+					data = bus.read_8(address) as i8 as u32;
 				}
 
 				if rd_index == PROGRAM_COUNTER_REGISTER {
