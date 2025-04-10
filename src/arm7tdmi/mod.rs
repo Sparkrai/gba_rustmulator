@@ -13,9 +13,8 @@ mod psr;
 mod thumb;
 
 pub type Gba32BitSlice = BitSlice<Lsb0, u32>;
-pub type Gba16BitSlice = BitSlice<Lsb0, u16>;
+pub type Gba8BitSlice = BitSlice<Lsb0, u8>;
 pub type Gba32BitRegister = BitArray<Lsb0, [u32; 1]>;
-pub type Gba16BitRegister = BitArray<Lsb0, [u16; 1]>;
 
 #[derive(Debug, Copy, Clone, Eq, PartialEq, FromPrimitive, ToPrimitive)]
 pub enum EOperatingMode {
