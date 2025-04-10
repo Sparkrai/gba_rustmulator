@@ -320,6 +320,11 @@ pub fn operate_arm(cpu: &mut CPU, bus: &mut SystemBus, instruction: u32) {
 				let new_address = if u { rn.wrapping_add(offset) } else { rn.wrapping_sub(offset) };
 				cpu.set_register_value(rn_index, new_address);
 			}
+
+			// NOTE: PC Changed!!!
+			if l && rd_index == PROGRAM_COUNTER_REGISTER {
+				return;
+			}
 		} else if (0x0e00_0090 & instruction) == 0x0000_0090 {
 			//LDRSHD/STRSHD Halfword, Doubleword, Signed Data Transfer
 			let p = (0x0100_0000 & instruction) != 0;
@@ -398,6 +403,11 @@ pub fn operate_arm(cpu: &mut CPU, bus: &mut SystemBus, instruction: u32) {
 				// Post Indexed
 				let new_address = if u { rn.wrapping_add(offset) } else { rn.wrapping_sub(offset) };
 				cpu.set_register_value(rn_index, new_address);
+			}
+
+			// NOTE: PC Changed!!!
+			if l && rd_index == PROGRAM_COUNTER_REGISTER {
+				return;
 			}
 		} else if (0x0e00_0000 & instruction) == 0x0800_0000 {
 			// LDM/STM Load/Store multiple registers
@@ -498,6 +508,11 @@ pub fn operate_arm(cpu: &mut CPU, bus: &mut SystemBus, instruction: u32) {
 
 			if user_bank_transfer {
 				cpu.set_operating_mode(old_mode);
+			}
+
+			// NOTE: PC Changed!!!
+			if l && reg_list[PROGRAM_COUNTER_REGISTER as usize] {
+				return;
 			}
 		} else if (0x0f00_0000 & instruction) == 0x0f00_0000 {
 			// SWI Software Interrupt Exception

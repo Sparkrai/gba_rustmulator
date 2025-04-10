@@ -5,6 +5,7 @@ use std::ops::Range;
 
 pub const IO_REGISTERS_END: u32 = 0x3fe;
 
+pub const SOUNDBIAS_RANGE: Range<usize> = 0x88..0x8c;
 pub const IE_RANGE: Range<usize> = 0x200..0x202;
 pub const IF_RANGE: Range<usize> = 0x202..0x204;
 pub const IME_RANGE: Range<usize> = 0x208..0x20a;
@@ -195,6 +196,27 @@ impl<'a> IF<'a> {
 	}
 }
 
+/// Sound PWM Control (R/W)
+pub struct SoundBias<'a>(&'a mut Gba8BitSlice);
+
+impl<'a> SoundBias<'a> {
+	pub fn new(register: &'a mut Gba8BitSlice) -> Self {
+		Self { 0: register }
+	}
+
+	pub fn get_bias_level(&self) -> u16 {
+		self.0[1..=9].load_le()
+	}
+
+	pub fn set_bias_level(&mut self, value: u16) {
+		self.0[1..=9].store_le(value);
+	}
+
+	pub fn get_amplitude_res(&self) -> u8 {
+		self.0[14..=15].load_le()
+	}
+}
+
 /// Represents the hardware registers mapped to memory
 pub struct IORegisters {
 	registers: Box<[u8]>,
@@ -205,10 +227,13 @@ impl IORegisters {
 		let mut result = Self {
 			registers: vec![0; IO_REGISTERS_END as usize].into_boxed_slice(),
 		};
-		result.set_ime(true);
-		result.registers[IE_RANGE].view_bits_mut::<Lsb0>()[0..=13].store_le(0xffffu16);
+		result.get_sound_bias().set_bias_level(0x100);
 
 		result
+	}
+
+	pub fn get_sound_bias(&mut self) -> SoundBias {
+		SoundBias::new(self.registers[SOUNDBIAS_RANGE].view_bits_mut())
 	}
 
 	pub fn get_ie(&self) -> IE {
@@ -221,10 +246,6 @@ impl IORegisters {
 
 	pub fn get_ime(&self) -> bool {
 		self.registers[IME_RANGE].view_bits::<Lsb0>()[0]
-	}
-
-	pub fn set_ime(&mut self, value: bool) {
-		self.registers[IME_RANGE].view_bits_mut::<Lsb0>().set(0, value);
 	}
 }
 

@@ -7,7 +7,7 @@ use imgui::*;
 use arm7tdmi::cpu::*;
 use system::*;
 
-use crate::debugging::{build_cpu_debug_window, build_memory_debug_window};
+use crate::debugging::{build_cpu_debug_window, build_io_registers_window, build_memory_debug_window};
 use crate::windowing::System;
 use glium::glutin::event::{Event, WindowEvent};
 use glium::glutin::event_loop::ControlFlow;
@@ -42,6 +42,7 @@ fn main() {
 	{
 		let mut show_cpu_debug_window = true;
 		let mut show_memory_debug_window = true;
+		let mut show_io_registers_window = true;
 		let mut show_demo_window = false;
 
 		let mut debug_mode = true;
@@ -49,6 +50,7 @@ fn main() {
 		let mut breakpoint_set = false;
 		let mut breakpoint_address = 0x0u32;
 		let mut current_inspected_address = 0;
+		let mut selected_io_register = 0;
 
 		//		let debug_mode = Arc::new(RwLock::new(true));
 		//		let execute_step = Arc::new(RwLock::new(false));
@@ -178,6 +180,9 @@ fn main() {
 							if MenuItem::new(im_str!("Memory")).build(&ui) {
 								show_memory_debug_window = true;
 							}
+							if MenuItem::new(im_str!("I/O Registers")).build(&ui) {
+								show_io_registers_window = true;
+							}
 						});
 						ui.menu(im_str!("Help"), true, || {
 							if MenuItem::new(im_str!("Demo")).build(&ui) {
@@ -200,7 +205,6 @@ fn main() {
 								texture: Rc::new(gl_texture),
 								sampler: SamplerBehavior { ..Default::default() },
 							};
-							let gl_texture_pointer = texture.texture.clone();
 							let texture_id = renderer.textures().insert(texture);
 							Image::new(texture_id, [240.0, 160.0]).build(&ui);
 						});
@@ -221,6 +225,10 @@ fn main() {
 							&mut breakpoint_address,
 							&&mut ui,
 						);
+					}
+
+					if show_io_registers_window {
+						build_io_registers_window(&bus, &mut show_io_registers_window, &mut selected_io_register, &&mut ui);
 					}
 
 					if show_demo_window {
@@ -248,7 +256,6 @@ fn main() {
 					let gl_window = display.gl_window();
 					platform.handle_event(imgui.io_mut(), gl_window.window(), &event);
 				}
-				_ => {}
 			}
 		});
 	} else {

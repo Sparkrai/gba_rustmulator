@@ -663,6 +663,11 @@ pub fn operate_thumb(instruction: u16, cpu: &mut CPU, bus: &mut SystemBus) {
 
 			cpu.set_register_value(STACK_POINTER_REGISTER, start_address);
 		}
+
+		// NOTE: PC Changed!!!
+		if pop && r {
+			return;
+		}
 	} else if (0xf000 & instruction) == 0xc000 {
 		// LDMIA/STMIA
 		let l = (0x0800 & instruction) != 0;
@@ -690,7 +695,7 @@ pub fn operate_thumb(instruction: u16, cpu: &mut CPU, bus: &mut SystemBus) {
 			debug_assert_eq!(end_address, address.wrapping_sub(4));
 		} else {
 			let mut first = true;
-			for i in 0..16 {
+			for i in 0..8 {
 				if reg_list[i] {
 					// NOTE: UNPREDICTABLE BEHAVIOR
 					let value = if first && i == rn_index as usize { rn } else { cpu.get_register_value(i as u8) };
@@ -730,13 +735,14 @@ pub fn operate_thumb(instruction: u16, cpu: &mut CPU, bus: &mut SystemBus) {
 	} else if (0xf000 & instruction) == 0xf000 {
 		// BL
 		let h = (0x0800 & instruction) != 0;
-		let offset = sign_extend(instruction & 0x07ff, 11);
 		let pc = cpu.get_register_value(PROGRAM_COUNTER_REGISTER) as i32;
 
 		if !h {
+			let offset = sign_extend(instruction & 0x07ff, 11);
 			cpu.set_register_value(LINK_REGISTER_REGISTER, pc.wrapping_add(offset << 12) as u32);
 		} else {
-			let lr = cpu.get_register_value(LINK_REGISTER_REGISTER) as i32;
+			let offset = (instruction & 0x07ff) as u32;
+			let lr = cpu.get_register_value(LINK_REGISTER_REGISTER);
 			cpu.set_register_value(PROGRAM_COUNTER_REGISTER, lr.wrapping_add(offset << 1) as u32);
 			// NOTE: Address of next instruction
 			cpu.set_register_value(LINK_REGISTER_REGISTER, ((pc - 2) | 0x1) as u32);

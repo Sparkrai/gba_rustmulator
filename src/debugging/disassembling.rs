@@ -68,7 +68,7 @@ pub fn disassemble_thumb(instruction: u16) -> String {
 			_ => panic!("ERROR!!!"),
 		}
 
-		format!("{} R{}, R{}, #{}", op, instruction & 0x0003, (instruction & 0x0038) >> 3, (instruction & 0x07c0) >> 6)
+		format!("{} R{}, R{}, #{}", op, instruction & 0x0007, (instruction & 0x0038) >> 3, (instruction & 0x07c0) >> 6)
 	} else if (0xe000 & instruction) == 0x2000 {
 		let op;
 		match (0x1800 & instruction) >> 11 {

@@ -4,6 +4,7 @@ use crate::arm7tdmi::cpu::CPU;
 use crate::arm7tdmi::EOperatingMode;
 use crate::debugging::disassembling::{disassemble_arm, disassemble_thumb};
 use crate::system::{MemoryInterface, SystemBus};
+use bitvec::prelude::*;
 
 mod disassembling;
 
@@ -180,4 +181,120 @@ pub fn build_cpu_debug_window(cpu: &CPU, ui: &&mut Ui, opened: &mut bool) {
 			ui.columns(1, im_str!(""), false);
 		}
 	});
+}
+
+pub fn build_io_registers_window(bus: &SystemBus, show_io_registers_window: &mut bool, selected_register: &mut usize, ui: &&mut Ui) {
+	Window::new(im_str!("I/O Registers"))
+		.size([400.0, 150.0], Condition::FirstUseEver)
+		.opened(show_io_registers_window)
+		.position([200.0, 1300.0], Condition::FirstUseEver)
+		.build(ui, || {
+			let registers = [
+				im_str!("0x40000000: DISPCNT"),
+				im_str!("0x40000004: DISPSTAT"),
+				im_str!("0x40000006: VCOUNT"),
+				im_str!("0x40000008: BG0CNT"),
+				im_str!("0x4000000a: BG1CNT"),
+				im_str!("0x4000000c: BG2CNT"),
+				im_str!("0x4000000e: BG3CNT"),
+				im_str!("0x40000010: BG0HOFS"),
+				im_str!("0x40000012: BG0VOFS"),
+				im_str!("0x40000014: BG1HOFS"),
+				im_str!("0x40000016: BG1VOFS"),
+				im_str!("0x40000018: BG2HOFS"),
+				im_str!("0x4000001a: BG2VOFS"),
+				im_str!("0x4000001c: BG3HOFS"),
+				im_str!("0x4000001e: BG3VOFS"),
+				im_str!("0x40000020: BG2PA"),
+				im_str!("0x40000022: BG2PB"),
+				im_str!("0x40000024: BG2PC"),
+				im_str!("0x40000026: BG2PD"),
+				im_str!("0x40000028: BG2X"),
+				im_str!("0x4000002c: BG2Y"),
+				im_str!("0x40000030: BG3PA"),
+				im_str!("0x40000032: BG3PB"),
+				im_str!("0x40000034: BG3PC"),
+				im_str!("0x40000036: BG3PD"),
+				im_str!("0x40000038: BG3X"),
+				im_str!("0x4000003c: BG3Y"),
+				im_str!("0x40000040: WIN0H"),
+				im_str!("0x40000042: WIN1H"),
+				im_str!("0x40000044: WIN0V"),
+				im_str!("0x40000046: WIN1V"),
+				im_str!("0x40000048: WININ"),
+				im_str!("0x4000004a: WINOUT"),
+				im_str!("0x4000004c: MOSAIC"),
+				im_str!("0x40000050: BLDCNT"),
+				im_str!("0x40000052: BLDALPHA"),
+				im_str!("0x40000054: BLDY"),
+				im_str!("0x40000088: SOUNDBIAS"),
+				im_str!("0x40000200: IE"),
+				im_str!("0x40000202: IF"),
+				im_str!("0x40000208: IME"),
+			];
+
+			let register_addresses = [
+				0x0400_0000,
+				0x0400_0004,
+				0x0400_0006,
+				0x0400_0008,
+				0x0400_000a,
+				0x0400_000c,
+				0x0400_000e,
+				0x0400_0010,
+				0x0400_0012,
+				0x0400_0014,
+				0x0400_0016,
+				0x0400_0018,
+				0x0400_001a,
+				0x0400_001c,
+				0x0400_001e,
+				0x0400_0020,
+				0x0400_0022,
+				0x0400_0024,
+				0x0400_0026,
+				0x0400_0028,
+				0x0400_002c,
+				0x0400_0030,
+				0x0400_0032,
+				0x0400_0034,
+				0x0400_0036,
+				0x0400_0038,
+				0x0400_003c,
+				0x0400_0040,
+				0x0400_0042,
+				0x0400_0044,
+				0x0400_0046,
+				0x0400_0048,
+				0x0400_004a,
+				0x0400_004c,
+				0x0400_0050,
+				0x0400_0052,
+				0x0400_0054,
+				0x0400_0088,
+				0x0400_0200,
+				0x0400_0202,
+				0x0400_0208,
+			];
+
+			ComboBox::new(im_str!("")).build_simple_string(ui, selected_register, &registers);
+
+			let selected_register_address = register_addresses[*selected_register as usize];
+			let register_value = bus.read_16(selected_register_address);
+			ui.text(im_str!("{}", register_value));
+
+			ui.columns(16, im_str!("Bits"), true);
+			for bit in register_value.view_bits::<Lsb0>() {
+				let mut bit_value = *bit;
+				ui.checkbox(&*im_str!(""), &mut bit_value);
+				ui.next_column();
+			}
+
+			ui.separator();
+
+			for i in 0..16 {
+				ui.text(im_str!("{}", i));
+				ui.next_column();
+			}
+		});
 }

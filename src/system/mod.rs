@@ -63,13 +63,18 @@ impl SystemBus {
 	}
 
 	pub fn new(bios_data: Box<[u8]>) -> Self {
+		let mut empty_cartridge_data = Vec::<u8>::with_capacity(CARTRIDGE_ROM_SIZE);
+		for i in 0..CARTRIDGE_ROM_SIZE {
+			empty_cartridge_data.push((i / 2 & 0xffff) as u8);
+		}
+
 		Self {
 			bios: bios_data,
 			ewram: vec![0; EWRAM_SIZE].into_boxed_slice(),
 			iwram: vec![0; IWRAM_SIZE].into_boxed_slice(),
 			io_regs: IORegisters::new(),
 			ppu: PPU::new(),
-			cartridge_rom: vec![0; CARTRIDGE_ROM_SIZE].into_boxed_slice(),
+			cartridge_rom: empty_cartridge_data.into_boxed_slice(),
 			cartridge_sram: vec![0; CARTRIDGE_SRAM_SIZE].into_boxed_slice(),
 		}
 	}
