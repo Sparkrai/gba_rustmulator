@@ -2,7 +2,6 @@
     rustflags = ["-C", "target-cpu=native"]
 
 [profile.release]
-    lto = true
     opt-level = 3
 
 [profile.dev.package."*"]
