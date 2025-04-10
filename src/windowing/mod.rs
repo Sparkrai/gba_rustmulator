@@ -1,18 +1,14 @@
-mod clipboard;
+use std::path::Path;
 
 use glium::glutin;
-use glium::glutin::event::{Event, WindowEvent};
-use glium::glutin::event_loop::{ControlFlow, EventLoop};
+use glium::glutin::event_loop::EventLoop;
 use glium::glutin::window::WindowBuilder;
-use glium::texture::TextureAny;
-use glium::uniforms::{MagnifySamplerFilter, MinifySamplerFilter, SamplerBehavior};
-use glium::{Display, Surface};
-use imgui::{Context, FontConfig, FontSource, TextureId, Ui};
-use imgui_glium_renderer::{Renderer, Texture};
+use glium::Display;
+use imgui::{Context, FontConfig, FontSource};
+use imgui_glium_renderer::Renderer;
 use imgui_winit_support::{HiDpiMode, WinitPlatform};
-use std::path::Path;
-use std::rc::Rc;
-use std::time::Instant;
+
+mod clipboard;
 
 pub struct System {
 	pub event_loop: EventLoop<()>,

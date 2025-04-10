@@ -1,24 +1,25 @@
-use crate::arm7tdmi::{Gba16BitRegister, Gba8BitRegister, Gba8BitSlice};
-use crate::system::MemoryInterface;
 use bitvec::prelude::*;
-use std::ops::Range;
 
-pub const IO_REGISTERS_END: u32 = 0x3fe;
+use crate::system::{Gba16BitRegister, Gba8BitRegister, MemoryInterface};
+
+//pub const IO_REGISTERS_END: u32 = 0x3fe;
 
 pub const SOUNDBIAS_ADDRESS: u32 = 0x88;
+pub const KEYINPUT_ADDRESS: u32 = 0x130;
 pub const IE_ADDRESS: u32 = 0x200;
 pub const IF_ADDRESS: u32 = 0x202;
 pub const IME_ADDRESS: u32 = 0x208;
 pub const POSTFLG_ADDRESS: u32 = 0x300;
 pub const HALTCNT_ADDRESS: u32 = 0x301;
 
+/// Key Status (R)
 pub struct KeyInput {
 	data: Gba16BitRegister,
 }
 
 impl KeyInput {
 	pub fn new() -> Self {
-		Self { data: bitarr![Lsb0, u16; 0; 16] }
+		Self { data: bitarr![Lsb0, u16; 1; 16] }
 	}
 
 	pub fn set_button_a(&mut self, value: bool) {
@@ -292,11 +293,11 @@ impl SoundBias {
 
 /// Represents the hardware registers mapped to memory
 pub struct IORegisters {
+	sound_bias: SoundBias,
 	key_input: KeyInput,
 	interrupt_enable: IE,
 	interrupt_request: IF,
 	ime: bool,
-	sound_bias: SoundBias,
 	halt_cnt: HaltControl,
 	pub halted: bool,
 }
@@ -304,18 +305,18 @@ pub struct IORegisters {
 impl IORegisters {
 	pub fn new() -> Self {
 		Self {
+			sound_bias: SoundBias::new(),
 			key_input: KeyInput::new(),
 			interrupt_enable: IE::new(),
 			interrupt_request: IF::new(),
 			ime: false,
-			sound_bias: SoundBias::new(),
 			halt_cnt: HaltControl::new(),
 			halted: false,
 		}
 	}
 
-	pub fn get_sound_bias(&self) -> &SoundBias {
-		&self.sound_bias
+	pub fn get_mut_key_input(&mut self) -> &mut KeyInput {
+		&mut self.key_input
 	}
 
 	pub fn get_ie(&self) -> &IE {
@@ -334,6 +335,10 @@ impl IORegisters {
 		self.ime
 	}
 
+	pub fn get_sound_bias(&self) -> &SoundBias {
+		&self.sound_bias
+	}
+
 	pub fn get_is_stop(&self) -> bool {
 		self.halt_cnt.get_is_stop()
 	}
@@ -344,11 +349,11 @@ impl MemoryInterface for IORegisters {
 		let addr = if address & 0xffff == 0x8000 { 0x800 } else { address & 0x00ff_ffff };
 		let shift = (addr as usize & 0x1) * 8;
 		match addr & !0x1 {
+			SOUNDBIAS_ADDRESS => self.sound_bias.data[shift..shift + 8].load_le(),
+			KEYINPUT_ADDRESS => self.key_input.data[shift..shift + 8].load_le(),
 			IE_ADDRESS => self.interrupt_enable.data[shift..shift + 8].load_le(),
 			IF_ADDRESS => self.interrupt_request.data[shift..shift + 8].load_le(),
 			IME_ADDRESS => return if shift == 0 { self.ime as u8 } else { 0 },
-			HALTCNT_ADDRESS => self.halt_cnt.data.load_le(),
-			SOUNDBIAS_ADDRESS => self.sound_bias.data[shift..shift + 8].load_le(),
 			_ => 0x0, // TODO: Return proper invalid value
 		}
 	}
@@ -381,10 +386,10 @@ impl MemoryInterface for IORegisters {
 	fn read_16(&self, address: u32) -> u16 {
 		let addr = if address & 0xffff == 0x8000 { 0x800 } else { address & 0x00ff_ffff };
 		match addr {
+			KEYINPUT_ADDRESS => self.key_input.data.load_le(),
 			IE_ADDRESS => self.interrupt_enable.data.load_le(),
 			IF_ADDRESS => self.interrupt_request.data.load_le(),
 			IME_ADDRESS => self.ime as u16,
-			POSTFLG_ADDRESS => (self.halt_cnt.data.load_le::<u8>() as u16) << 8,
 			SOUNDBIAS_ADDRESS => self.sound_bias.data.load_le(),
 			_ => 0x0, // TODO: Return proper invalid value
 		}
@@ -411,15 +416,14 @@ impl MemoryInterface for IORegisters {
 	}
 
 	fn read_32(&self, address: u32) -> u32 {
-		unsafe {
-			let addr = if address & 0xffff == 0x8000 { 0x800 } else { address & 0x00ff_ffff };
-			match addr {
-				IE_ADDRESS => self.interrupt_enable.data.load_le::<u32>() | (self.interrupt_request.data.load_le::<u32>() << 16),
-				IME_ADDRESS => self.ime as u32,
-				POSTFLG_ADDRESS => self.halt_cnt.data.load_le::<u32>() << 8,
-				SOUNDBIAS_ADDRESS => self.sound_bias.data.load_le::<u32>(),
-				_ => 0x0, // TODO: Return proper invalid value
-			}
+		let addr = if address & 0xffff == 0x8000 { 0x800 } else { address & 0x00ff_ffff };
+		match addr {
+			KEYINPUT_ADDRESS => self.key_input.data.load_le(),
+			IE_ADDRESS => self.interrupt_enable.data.load_le::<u32>() | (self.interrupt_request.data.load_le::<u32>() << 16),
+			IME_ADDRESS => self.ime as u32,
+			POSTFLG_ADDRESS => self.halt_cnt.data.load_le::<u32>() << 8,
+			SOUNDBIAS_ADDRESS => self.sound_bias.data.load_le::<u32>(),
+			_ => 0x0, // TODO: Return proper invalid value
 		}
 	}
 

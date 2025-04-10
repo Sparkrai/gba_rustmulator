@@ -266,16 +266,16 @@ impl CPU {
 				return_address_offset = self.get_instruction_length();
 				operating_mode = EOperatingMode::SupervisorMode;
 			}
-			EExceptionType::PrefetchAbort => {
-				exception_vector_address = 0xc;
-				return_address_offset = 0x4;
-				operating_mode = EOperatingMode::AbortMode;
-			}
-			EExceptionType::DataAbort => {
-				exception_vector_address = 0x10;
-				return_address_offset = 0x8;
-				operating_mode = EOperatingMode::AbortMode;
-			}
+			//			EExceptionType::PrefetchAbort => {
+			//				exception_vector_address = 0xc;
+			//				return_address_offset = 0x4;
+			//				operating_mode = EOperatingMode::AbortMode;
+			//			}
+			//			EExceptionType::DataAbort => {
+			//				exception_vector_address = 0x10;
+			//				return_address_offset = 0x8;
+			//				operating_mode = EOperatingMode::AbortMode;
+			//			}
 			EExceptionType::Irq => {
 				exception_vector_address = 0x18;
 				return_address_offset = 0x4;

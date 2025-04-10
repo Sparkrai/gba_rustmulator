@@ -1,11 +1,9 @@
-use std::ops::Range;
-
 use bitvec::prelude::*;
 use num_derive::*;
 use num_traits::FromPrimitive;
 
-use crate::arm7tdmi::{sign_extend, Gba16BitRegister, Gba32BitRegister, Gba8BitSlice};
-use crate::system::{IORegister, MemoryInterface};
+use crate::arm7tdmi::sign_extend;
+use crate::system::{Gba16BitRegister, Gba32BitRegister, Gba8BitSlice, MemoryInterface};
 use crate::system::{OAM_ADDR, PALETTE_RAM_ADDR, VRAM_ADDR};
 
 pub const PPU_REGISTERS_END: u32 = 0x56;
@@ -57,11 +55,11 @@ pub const WIN1_V_ADDRESS: u32 = 0x46;
 pub const WIN_IN_ADDRESS: u32 = 0x48;
 pub const WIN_OUT_ADDRESS: u32 = 0x4a;
 pub const MOSAIC_LO_ADDRESS: u32 = 0x4c;
-pub const MOSAIC_HI_ADDRESS: u32 = 0x4e;
+//pub const MOSAIC_HI_ADDRESS: u32 = 0x4e;
 pub const BLD_CNT_ADDRESS: u32 = 0x50;
 pub const BLD_ALPHA_ADDRESS: u32 = 0x52;
 pub const BLD_Y_LO_ADDRESS: u32 = 0x54;
-pub const BLD_Y_HI_ADDRESS: u32 = 0x56;
+//pub const BLD_Y_HI_ADDRESS: u32 = 0x56;
 
 #[derive(Debug, Copy, Clone, FromPrimitive, ToPrimitive, PartialEq)]
 pub enum EVideoMode {
@@ -477,8 +475,8 @@ impl PPU {
 									for screen_y in 0..160 {
 										for screen_x in 0..240 {
 											// NOTE: These values wrap around
-											let pixel_x = bg_x % width + screen_x;
-											let pixel_y = bg_y % height + screen_y;
+											let pixel_x = (bg_x + screen_x) % width;
+											let pixel_y = (bg_y + screen_y) % height;
 
 											let pixel_index = (screen_x as usize + (screen_y as usize * 240)) * 3;
 
@@ -530,9 +528,9 @@ impl PPU {
 
 						for y in 0..160 {
 							for x in 0..240 {
-								let bitmap_index = (x as usize + (y as usize * 240));
+								let bitmap_index = x as usize + (y as usize * 240);
 								let pixel_index = bitmap_index * 3;
-								let palette_entry = (self.vram[starting_address + bitmap_index]) as u32;
+								let palette_entry = self.vram[starting_address + bitmap_index] as u32;
 
 								let color = Color::new(self.read_16(PALETTE_RAM_ADDR as u32 + palette_entry * 2));
 
@@ -852,7 +850,7 @@ impl BackgroundAffineMatrix {
 	}
 }
 
-struct FixedPoint16Bit {
+pub struct FixedPoint16Bit {
 	data: Gba16BitRegister,
 }
 
@@ -880,7 +878,7 @@ impl FixedPoint16Bit {
 	}
 }
 
-struct FixedPoint28Bit {
+pub struct FixedPoint28Bit {
 	data: Gba32BitRegister,
 }
 

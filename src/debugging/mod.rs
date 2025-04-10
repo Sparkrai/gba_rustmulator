@@ -3,8 +3,8 @@ use imgui::*;
 use crate::arm7tdmi::cpu::CPU;
 use crate::arm7tdmi::EOperatingMode;
 use crate::debugging::disassembling::{disassemble_arm, disassemble_thumb};
-use crate::ppu::{Color, PALETTE_RAM_SIZE, VRAM_SIZE};
-use crate::system::{MemoryInterface, SystemBus, PALETTE_RAM_ADDR, VRAM_ADDR};
+use crate::ppu::{Color, PALETTE_RAM_SIZE};
+use crate::system::{MemoryInterface, SystemBus, PALETTE_RAM_ADDR};
 use bitvec::prelude::*;
 
 pub mod disassembling;
@@ -142,7 +142,7 @@ pub fn build_tiles_debug_window(bus: &SystemBus, show_tiles_window: &mut bool, i
 		});
 }
 
-pub fn build_sprites_debug_window(bus: &SystemBus, show_sprites_window: &mut bool, texture_ids: &[TextureId], ui: &&mut Ui) {
+pub fn build_sprites_debug_window(show_sprites_window: &mut bool, texture_ids: &[TextureId], ui: &&mut Ui) {
 	Window::new(im_str!("Sprites"))
 		.size([600.0, 700.0], Condition::FirstUseEver)
 		.opened(show_sprites_window)

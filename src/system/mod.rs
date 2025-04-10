@@ -1,8 +1,11 @@
-mod io;
+use bitvec::array::BitArray;
+use bitvec::order::Lsb0;
+use bitvec::prelude::BitSlice;
 
 use crate::ppu::{PPU, PPU_REGISTERS_END};
-use crate::system::io::{IORegisters, IO_REGISTERS_END};
-use num_traits::{PrimInt, Unsigned};
+use crate::system::io::IORegisters;
+
+mod io;
 
 // Sizes
 pub const EWRAM_SIZE: usize = 256 * 1024;
@@ -27,7 +30,13 @@ pub const CARTRIDGE_WS2_LO: u32 = 0x0C00_0000;
 pub const CARTRIDGE_WS2_HI: u32 = 0x0D00_0000;
 pub const CARTRIDGE_SRAM_LO: u32 = 0x0E00_0000;
 
-/// Provides read/write access to system
+pub type Gba32BitSlice = BitSlice<Lsb0, u32>;
+pub type Gba8BitSlice = BitSlice<Lsb0, u8>;
+pub type Gba32BitRegister = BitArray<Lsb0, [u32; 1]>;
+pub type Gba16BitRegister = BitArray<Lsb0, [u16; 1]>;
+pub type Gba8BitRegister = BitArray<Lsb0, [u8; 1]>;
+
+/// Provides read/write access to the system
 pub trait MemoryInterface {
 	fn read_8(&self, address: u32) -> u8;
 	fn write_8(&mut self, address: u32, value: u8);
@@ -37,19 +46,13 @@ pub trait MemoryInterface {
 	fn write_32(&mut self, address: u32, value: u32);
 }
 
-/// Provides read/write access to I/O Registers
-pub trait IORegister<T: PrimInt + Unsigned> {
-	fn read(&self) -> T;
-	fn write(&mut self, value: T);
-}
-
 /// The system bus
 ///
-/// This unit holds a system byte array which represents the address space of the system.
+/// This unit emulates the memory bus by redirecting data requests to the right components (eg. PPU, IWRAM, etc...)
 pub struct SystemBus {
 	bios: Box<[u8]>,
-	ewram: Box<[u8]>,
-	iwram: Box<[u8]>,
+	external_wram: Box<[u8]>,
+	internal_wram: Box<[u8]>,
 	pub io_regs: IORegisters,
 	pub ppu: PPU,
 	cartridge_rom: Box<[u8]>,
@@ -60,8 +63,8 @@ impl SystemBus {
 	pub fn new_with_cartridge(bios_data: Box<[u8]>, cartridge_data: Box<[u8]>) -> Self {
 		Self {
 			bios: bios_data,
-			ewram: vec![0; EWRAM_SIZE].into_boxed_slice(),
-			iwram: vec![0; IWRAM_SIZE].into_boxed_slice(),
+			external_wram: vec![0; EWRAM_SIZE].into_boxed_slice(),
+			internal_wram: vec![0; IWRAM_SIZE].into_boxed_slice(),
 			io_regs: IORegisters::new(),
 			ppu: PPU::new(),
 			cartridge_rom: cartridge_data,
@@ -72,8 +75,8 @@ impl SystemBus {
 	pub fn new(bios_data: Box<[u8]>) -> Self {
 		Self {
 			bios: bios_data,
-			ewram: vec![0; EWRAM_SIZE].into_boxed_slice(),
-			iwram: vec![0; IWRAM_SIZE].into_boxed_slice(),
+			external_wram: vec![0; EWRAM_SIZE].into_boxed_slice(),
+			internal_wram: vec![0; IWRAM_SIZE].into_boxed_slice(),
 			io_regs: IORegisters::new(),
 			ppu: PPU::new(),
 			cartridge_rom: Vec::<u8>::new().into_boxed_slice(),
@@ -93,8 +96,8 @@ impl MemoryInterface for SystemBus {
 					0x0
 				}
 			}
-			EWRAM_ADDR => self.ewram[(address & 0x3_ffff) as usize],
-			IWRAM_ADDR => self.iwram[(address & 0x7fff) as usize],
+			EWRAM_ADDR => self.external_wram[(address & 0x3_ffff) as usize],
+			IWRAM_ADDR => self.internal_wram[(address & 0x7fff) as usize],
 			IO_ADDR => {
 				if address & 0x00ff_ffff <= PPU_REGISTERS_END {
 					self.ppu.read_8(address)
@@ -118,8 +121,8 @@ impl MemoryInterface for SystemBus {
 
 	fn write_8(&mut self, address: u32, value: u8) {
 		match address & 0xff00_0000 {
-			EWRAM_ADDR => self.ewram[(address & 0x3_ffff) as usize] = value,
-			IWRAM_ADDR => self.iwram[(address & 0x7fff) as usize] = value,
+			EWRAM_ADDR => self.external_wram[(address & 0x3_ffff) as usize] = value,
+			IWRAM_ADDR => self.internal_wram[(address & 0x7fff) as usize] = value,
 			IO_ADDR => {
 				if address & 0x00ff_ffff <= PPU_REGISTERS_END {
 					self.ppu.write_8(address, value);
@@ -150,8 +153,8 @@ impl MemoryInterface for SystemBus {
 						0x0
 					}
 				}
-				EWRAM_ADDR => *(self.ewram.as_ptr().offset((address & 0x3_ffff) as isize) as *mut u16) as u16,
-				IWRAM_ADDR => *(self.iwram.as_ptr().offset((address & 0x7fff) as isize) as *mut u16) as u16,
+				EWRAM_ADDR => *(self.external_wram.as_ptr().offset((address & 0x3_ffff) as isize) as *mut u16) as u16,
+				IWRAM_ADDR => *(self.internal_wram.as_ptr().offset((address & 0x7fff) as isize) as *mut u16) as u16,
 				IO_ADDR => {
 					if address & 0x00ff_ffff <= PPU_REGISTERS_END {
 						self.ppu.read_16(address)
@@ -177,8 +180,8 @@ impl MemoryInterface for SystemBus {
 	fn write_16(&mut self, address: u32, value: u16) {
 		unsafe {
 			match address & 0xff00_0000 {
-				EWRAM_ADDR => *(self.ewram.as_ptr().offset((address & 0x3_ffff) as isize) as *mut u16) = value,
-				IWRAM_ADDR => *(self.iwram.as_ptr().offset((address & 0x7fff) as isize) as *mut u16) = value,
+				EWRAM_ADDR => *(self.external_wram.as_ptr().offset((address & 0x3_ffff) as isize) as *mut u16) = value,
+				IWRAM_ADDR => *(self.internal_wram.as_ptr().offset((address & 0x7fff) as isize) as *mut u16) = value,
 				IO_ADDR => {
 					if address & 0x00ff_ffff <= PPU_REGISTERS_END {
 						self.ppu.write_16(address, value);
@@ -210,8 +213,8 @@ impl MemoryInterface for SystemBus {
 						0x0
 					}
 				}
-				EWRAM_ADDR => *(self.ewram.as_ptr().offset((address & 0x3_ffff) as isize) as *mut u32) as u32,
-				IWRAM_ADDR => *(self.iwram.as_ptr().offset((address & 0x7fff) as isize) as *mut u32) as u32,
+				EWRAM_ADDR => *(self.external_wram.as_ptr().offset((address & 0x3_ffff) as isize) as *mut u32) as u32,
+				IWRAM_ADDR => *(self.internal_wram.as_ptr().offset((address & 0x7fff) as isize) as *mut u32) as u32,
 				IO_ADDR => {
 					if address & 0x00ff_ffff <= PPU_REGISTERS_END {
 						self.ppu.read_32(address)
@@ -237,8 +240,8 @@ impl MemoryInterface for SystemBus {
 	fn write_32(&mut self, address: u32, value: u32) {
 		unsafe {
 			match address & 0xff00_0000 {
-				EWRAM_ADDR => *(self.ewram.as_ptr().offset((address & 0x3_ffff) as isize) as *mut u32) = value,
-				IWRAM_ADDR => *(self.iwram.as_ptr().offset((address & 0x7fff) as isize) as *mut u32) = value,
+				EWRAM_ADDR => *(self.external_wram.as_ptr().offset((address & 0x3_ffff) as isize) as *mut u32) = value,
+				IWRAM_ADDR => *(self.internal_wram.as_ptr().offset((address & 0x7fff) as isize) as *mut u32) = value,
 				IO_ADDR => {
 					if address & 0x00ff_ffff <= PPU_REGISTERS_END {
 						self.ppu.write_32(address, value);

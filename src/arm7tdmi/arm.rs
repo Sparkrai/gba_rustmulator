@@ -308,7 +308,7 @@ pub fn operate_arm(cpu: &mut CPU, bus: &mut SystemBus, instruction: u32) {
 				}
 			} else {
 				if l {
-					let data = load_32_from_memory(cpu, bus, address);
+					let data = load_32_from_memory(bus, address);
 
 					if rd_index == PROGRAM_COUNTER_REGISTER {
 						cpu.set_register_value(rd_index, data & !0x3);
@@ -478,7 +478,7 @@ pub fn operate_arm(cpu: &mut CPU, bus: &mut SystemBus, instruction: u32) {
 				}
 
 				if l {
-					let value = load_32_from_memory(cpu, bus, address);
+					let value = load_32_from_memory(bus, address);
 					cpu.set_register_value(PROGRAM_COUNTER_REGISTER, value);
 				} else {
 					let value = cpu.get_register_value(PROGRAM_COUNTER_REGISTER) + 4;
@@ -536,7 +536,7 @@ pub fn operate_arm(cpu: &mut CPU, bus: &mut SystemBus, instruction: u32) {
 				if l {
 					for i in 0..15 {
 						if reg_list[i] {
-							let value = load_32_from_memory(cpu, bus, address);
+							let value = load_32_from_memory(bus, address);
 							cpu.set_register_value(i as u8, value);
 							address = address.wrapping_add(4);
 						}
@@ -548,7 +548,7 @@ pub fn operate_arm(cpu: &mut CPU, bus: &mut SystemBus, instruction: u32) {
 							cpu.get_mut_cpsr().set_value(spsr);
 						}
 
-						let value = load_32_from_memory(cpu, bus, address) & !0x3;
+						let value = load_32_from_memory(bus, address) & !0x3;
 						cpu.set_register_value(PROGRAM_COUNTER_REGISTER, value);
 						address = address.wrapping_add(4);
 					}

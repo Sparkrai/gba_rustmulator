@@ -1,7 +1,8 @@
 use bitvec::prelude::*;
 use num_traits::ToPrimitive;
 
-use crate::arm7tdmi::{EOperatingMode, Gba32BitRegister, Gba32BitSlice};
+use crate::arm7tdmi::EOperatingMode;
+use crate::system::{Gba32BitRegister, Gba32BitSlice};
 
 #[derive(Clone)]
 pub struct CPSR(Gba32BitRegister);

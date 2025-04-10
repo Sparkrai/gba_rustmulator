@@ -1,6 +1,3 @@
-use bitvec::array::BitArray;
-use bitvec::order::Lsb0;
-use bitvec::prelude::BitSlice;
 use num_derive::*;
 use num_traits::{AsPrimitive, PrimInt};
 
@@ -11,12 +8,6 @@ mod arm;
 pub mod cpu;
 mod psr;
 mod thumb;
-
-pub type Gba32BitSlice = BitSlice<Lsb0, u32>;
-pub type Gba8BitSlice = BitSlice<Lsb0, u8>;
-pub type Gba32BitRegister = BitArray<Lsb0, [u32; 1]>;
-pub type Gba16BitRegister = BitArray<Lsb0, [u16; 1]>;
-pub type Gba8BitRegister = BitArray<Lsb0, [u8; 1]>;
 
 #[derive(Debug, Copy, Clone, Eq, PartialEq, FromPrimitive, ToPrimitive)]
 pub enum EOperatingMode {
@@ -34,8 +25,8 @@ pub enum EExceptionType {
 	Reset,
 	Undefined,
 	SoftwareInterrupt,
-	PrefetchAbort,
-	DataAbort,
+	//	PrefetchAbort,
+	//	DataAbort,
 	Irq,
 	Fiq,
 }
@@ -76,7 +67,7 @@ pub fn cond_passed(cpu: &CPU, cond: u8) -> bool {
 	}
 }
 
-pub fn load_32_from_memory(cpu: &mut CPU, bus: &SystemBus, address: u32) -> u32 {
+pub fn load_32_from_memory(bus: &SystemBus, address: u32) -> u32 {
 	let data;
 	if (address & 0x0000_0003) == 0 {
 		data = bus.read_32(address);

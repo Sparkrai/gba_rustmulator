@@ -1,8 +1,14 @@
 use std::fs::{File, OpenOptions};
 use std::io::{Read, Write};
+use std::rc::Rc;
+use std::time::{Duration, Instant};
 
 use bitvec::prelude::*;
 use glium;
+use glium::glutin::event::{ElementState, Event, VirtualKeyCode, WindowEvent};
+use glium::glutin::event_loop::ControlFlow;
+use glium::uniforms::{SamplerBehavior, SamplerWrapFunction};
+use glium::Surface;
 use imgui::*;
 
 use arm7tdmi::cpu::*;
@@ -10,15 +16,8 @@ use system::*;
 
 use crate::debugging::disassembling::disassemble_instruction;
 use crate::debugging::{build_cpu_debug_window, build_io_registers_window, build_memory_debug_window, build_sprites_debug_window, build_tiles_debug_window};
-use crate::ppu::{Color, EVideoMode, SpriteEntry, OAM_SIZE, PALETTE_RAM_SIZE, SPRITE_PALETTE_START_ADDRESS, SPRITE_TILES_START_ADDRESS, VRAM_SIZE};
+use crate::ppu::{Color, EVideoMode, SpriteEntry, OAM_SIZE, SPRITE_PALETTE_START_ADDRESS, SPRITE_TILES_START_ADDRESS, VRAM_SIZE};
 use crate::windowing::System;
-use glium::glutin::event::{Event, WindowEvent};
-use glium::glutin::event_loop::ControlFlow;
-use glium::uniforms::{SamplerBehavior, SamplerWrapFunction};
-use glium::Surface;
-use std::rc::Rc;
-use std::sync::{Arc, RwLock};
-use std::time::{Duration, Instant};
 
 mod arm7tdmi;
 mod debugging;
@@ -97,8 +96,6 @@ fn main() {
 					last_frame = Instant::now();
 				}
 				Event::MainEventsCleared => {
-					// NOTE: Poll key input!
-
 					// NOTE: Advance GBA by one frame
 					const CYCLES_PER_FRAME: u32 = 280_896;
 					if !debug_mode || execute_step {
@@ -172,7 +169,7 @@ fn main() {
 					let mut ui = imgui.frame();
 
 					// NOTE: UI BEGIN!!!
-					let mut run = true;
+					let run = true;
 					ui.main_menu_bar(|| {
 						ui.menu(im_str!("Debug"), true, || {
 							if MenuItem::new(im_str!("CPU")).build(&ui) {
@@ -200,13 +197,13 @@ fn main() {
 
 					// NOTE: Render window!!!
 					Window::new(im_str!("Render"))
-						.size([0.0, 0.0], Condition::FirstUseEver)
+						.size([0.0, 0.0], Condition::Always)
 						.resizable(true)
 						.position([900.0, 600.0], Condition::FirstUseEver)
 						.build(&ui, || {
 							let frame_texture = bus.ppu.render();
 
-							let mut image = glium::texture::RawImage2d::from_raw_rgb(frame_texture, (240, 160));
+							let image = glium::texture::RawImage2d::from_raw_rgb(frame_texture, (240, 160));
 							let gl_texture = glium::texture::Texture2d::new(&display, image).unwrap();
 
 							let texture = imgui_glium_renderer::Texture {
@@ -271,7 +268,7 @@ fn main() {
 								pixels[pixel_index as usize + 2] = color.get_blue();
 							}
 
-							let mut image = glium::texture::RawImage2d::from_raw_rgb(pixels, (256, 384));
+							let image = glium::texture::RawImage2d::from_raw_rgb(pixels, (256, 384));
 							let gl_texture = glium::texture::Texture2d::new(&display, image).unwrap();
 
 							let texture = imgui_glium_renderer::Texture {
@@ -351,7 +348,7 @@ fn main() {
 									}
 								}
 
-								let mut image = glium::texture::RawImage2d::from_raw_rgb(pixels, (width as u32, height as u32));
+								let image = glium::texture::RawImage2d::from_raw_rgb(pixels, (width as u32, height as u32));
 								let gl_texture = glium::texture::Texture2d::new(&display, image).unwrap();
 
 								let texture = imgui_glium_renderer::Texture {
@@ -366,7 +363,7 @@ fn main() {
 								texture_ids.push(texture_id);
 							}
 
-							build_sprites_debug_window(&bus, &mut show_sprites_window, &texture_ids, &&mut ui);
+							build_sprites_debug_window(&mut show_sprites_window, &texture_ids, &&mut ui);
 						}
 					}
 
@@ -387,32 +384,34 @@ fn main() {
 					renderer.render(&mut target, draw_data).expect("Rendering failed");
 					target.finish().expect("Failed to swap buffers");
 				}
-				Event::WindowEvent { event, .. } => match event {
-					WindowEvent::Resized(_) => {}
-					WindowEvent::Moved(_) => {}
-					WindowEvent::CloseRequested => *control_flow = ControlFlow::Exit,
-					WindowEvent::Destroyed => {}
-					WindowEvent::DroppedFile(_) => {}
-					WindowEvent::HoveredFile(_) => {}
-					WindowEvent::HoveredFileCancelled => {}
-					WindowEvent::ReceivedCharacter(_) => {}
-					WindowEvent::Focused(_) => {}
-					WindowEvent::KeyboardInput { input, .. } => match input.scancode {
-						 => {}
-					},
-					WindowEvent::ModifiersChanged(_) => {}
-					WindowEvent::CursorMoved { .. } => {}
-					WindowEvent::CursorEntered { .. } => {}
-					WindowEvent::CursorLeft { .. } => {}
-					WindowEvent::MouseWheel { .. } => {}
-					WindowEvent::MouseInput { .. } => {}
-					WindowEvent::TouchpadPressure { .. } => {}
-					WindowEvent::AxisMotion { .. } => {}
-					WindowEvent::Touch(_) => {}
-					WindowEvent::ScaleFactorChanged { .. } => {}
-					WindowEvent::ThemeChanged(_) => {}
-				},
-				event => {
+				Event::WindowEvent {
+					event: WindowEvent::CloseRequested,
+					..
+				} => *control_flow = ControlFlow::Exit,
+				Event::WindowEvent {
+					event: WindowEvent::KeyboardInput { input, .. },
+					..
+				} => {
+					if !imgui.io().want_capture_keyboard {
+						let released = input.state == ElementState::Released;
+						if let Some(key_code) = input.virtual_keycode {
+							match key_code {
+								VirtualKeyCode::A => bus.io_regs.get_mut_key_input().set_button_a(released),
+								VirtualKeyCode::S => bus.io_regs.get_mut_key_input().set_button_b(released),
+								VirtualKeyCode::Z => bus.io_regs.get_mut_key_input().set_select(released),
+								VirtualKeyCode::X => bus.io_regs.get_mut_key_input().set_start(released),
+								VirtualKeyCode::Right => bus.io_regs.get_mut_key_input().set_right(released),
+								VirtualKeyCode::Left => bus.io_regs.get_mut_key_input().set_left(released),
+								VirtualKeyCode::Up => bus.io_regs.get_mut_key_input().set_up(released),
+								VirtualKeyCode::Down => bus.io_regs.get_mut_key_input().set_down(released),
+								VirtualKeyCode::LShift => bus.io_regs.get_mut_key_input().set_button_r(released),
+								VirtualKeyCode::Space => bus.io_regs.get_mut_key_input().set_button_l(released),
+								_ => {}
+							}
+						}
+					}
+				}
+				_ => {
 					let gl_window = display.gl_window();
 					platform.handle_event(imgui.io_mut(), gl_window.window(), &event);
 				}

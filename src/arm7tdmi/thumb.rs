@@ -448,7 +448,7 @@ pub fn operate_thumb(instruction: u16, cpu: &mut CPU, bus: &mut SystemBus) {
 			if b {
 				data = bus.read_8(address) as u32;
 			} else {
-				data = load_32_from_memory(cpu, bus, address);
+				data = load_32_from_memory(bus, address);
 			}
 			cpu.set_register_value(rd_index, data);
 		} else {
@@ -520,7 +520,7 @@ pub fn operate_thumb(instruction: u16, cpu: &mut CPU, bus: &mut SystemBus) {
 			if b {
 				data = bus.read_8(address) as u32;
 			} else {
-				data = load_32_from_memory(cpu, bus, address);
+				data = load_32_from_memory(bus, address);
 			}
 
 			cpu.set_register_value(rd_index, data);
@@ -566,7 +566,7 @@ pub fn operate_thumb(instruction: u16, cpu: &mut CPU, bus: &mut SystemBus) {
 
 		let address = cpu.get_register_value(STACK_POINTER_REGISTER).wrapping_add(offset * 4);
 		if l {
-			let data = load_32_from_memory(cpu, bus, address);
+			let data = load_32_from_memory(bus, address);
 
 			cpu.set_register_value(rd_index, data);
 		} else {
@@ -667,7 +667,7 @@ pub fn operate_thumb(instruction: u16, cpu: &mut CPU, bus: &mut SystemBus) {
 			cpu.set_register_value(rn_index, rn.wrapping_add(0x40));
 
 			if l {
-				let value = load_32_from_memory(cpu, bus, address);
+				let value = load_32_from_memory(bus, address);
 				cpu.set_register_value(PROGRAM_COUNTER_REGISTER, value);
 			} else {
 				let value = cpu.get_register_value(PROGRAM_COUNTER_REGISTER) + 2;
