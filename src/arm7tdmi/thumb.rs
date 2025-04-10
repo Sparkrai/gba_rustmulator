@@ -518,7 +518,7 @@ pub fn operate_thumb(instruction: u16, cpu: &mut CPU, bus: &mut SystemBus) {
 		let rn = cpu.get_register_value(((0x0038 & instruction) >> 3) as u8);
 		let rd_index = (0x0007 & instruction) as u8;
 
-		let address = if b { rn.wrapping_add(offset * 4) } else { rn.wrapping_add(offset) };
+		let address = rn.wrapping_add(offset);
 		if l {
 			let data;
 			if b {

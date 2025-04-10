@@ -17,6 +17,7 @@
     num-traits = "0.2"
     num-derive = "0.2"
     spin_sleep = "1.0"
+    clipboard = "0.5"
 
 [profile.dev]
 	opt-level = 0

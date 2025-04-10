@@ -66,11 +66,11 @@ pub fn cond_passed(cpu: &CPU, cond: u8) -> bool {
 		0x6 => cpu.get_cpsr().get_v(),                                                      // Signed overflow
 		0x7 => !cpu.get_cpsr().get_v(),                                                     // Signed no overflow
 		0x8 => cpu.get_cpsr().get_c() && !cpu.get_cpsr().get_z(),                           // Unsigned higher
-		0x9 => !cpu.get_cpsr().get_c() && cpu.get_cpsr().get_z(),                           // Unsigned lower or same
+		0x9 => !cpu.get_cpsr().get_c() || cpu.get_cpsr().get_z(),                           // Unsigned lower or same
 		0xa => cpu.get_cpsr().get_n() == cpu.get_cpsr().get_v(),                            // Signed greater or equal
 		0xb => cpu.get_cpsr().get_n() != cpu.get_cpsr().get_v(),                            // Signed less than
 		0xc => !cpu.get_cpsr().get_z() && cpu.get_cpsr().get_n() == cpu.get_cpsr().get_v(), // Signed greater than
-		0xd => cpu.get_cpsr().get_z() && cpu.get_cpsr().get_n() != cpu.get_cpsr().get_v(),  // Signed less or equal
+		0xd => cpu.get_cpsr().get_z() || cpu.get_cpsr().get_n() != cpu.get_cpsr().get_v(),  // Signed less or equal
 		_ => true,
 	}
 }

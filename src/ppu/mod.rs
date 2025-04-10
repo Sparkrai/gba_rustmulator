@@ -80,10 +80,13 @@ pub struct Color {
 impl Color {
 	pub fn new(data: u16) -> Self {
 		let bits = data.view_bits::<Lsb0>();
+		let r = bits[0x0..=0x4].load_le::<u8>();
+		let g = bits[0x5..=0x9].load_le::<u8>();
+		let b = bits[0xa..=0xe].load_le::<u8>();
 		Self {
-			red: bits[0x0..=0x4].load_le(),
-			green: bits[0x5..=0x9].load_le(),
-			blue: bits[0xa..=0xe].load_le(),
+			red: r | r << 5,
+			green: g | g << 5,
+			blue: b | b << 5,
 		}
 	}
 
@@ -221,8 +224,12 @@ impl PPU {
 		DispStat::new(self.registers[DISP_STAT_RANGE].view_bits_mut())
 	}
 
-	fn get_vcount(&self) -> u8 {
+	pub fn get_vcount(&self) -> u8 {
 		self.registers[VCOUNT_RANGE].view_bits::<Lsb0>()[0..8].load_le()
+	}
+
+	pub fn set_vcount(&mut self, value: u8) {
+		self.registers[VCOUNT_RANGE].view_bits_mut::<Lsb0>()[0..8].store_le(value);
 	}
 
 	fn get_bg0_cnt(&self) -> BgCnt {
@@ -361,7 +368,6 @@ impl PPU {
 	pub fn render(&mut self) -> Vec<u8> {
 		let mut pixels = vec![0; SCREEN_TOTAL_PIXELS * 3];
 		let video_mode = self.get_disp_cnt().get_bg_mode();
-		println!("Current video mode: {:?}", video_mode);
 
 		match video_mode {
 			EVideoMode::Mode0 => {}
@@ -388,7 +394,7 @@ impl PPU {
 						let tile = pixel / 8;
 						let tile_number = self.vram[bg3_cnt.get_map_data_address() + tile] as usize;
 
-						let palette_color_index = self.vram[bg3_cnt.get_tile_data_address() + (tile_number * 64) + (pixel % 8)] as usize;
+						let palette_color_index = (self.vram[bg3_cnt.get_tile_data_address() + (tile_number * 64) + (pixel % 8)] * 2) as usize;
 						let color = Color::new(((self.palette_ram[palette_color_index + 1] as u16) << 8 | self.palette_ram[palette_color_index] as u16));
 
 						let pixel_index = x * 240 + y;
@@ -578,7 +584,7 @@ impl<'a> BgTransform<'a> {
 		self.0[0..=7].load_le()
 	}
 
-	pub fn get_integer(&self) -> u8 {
+	pub fn get_integer(&self) -> u32 {
 		self.0[8..=26].load_le()
 	}
 

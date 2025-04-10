@@ -11,6 +11,7 @@ pub fn operate_arm(cpu: &mut CPU, bus: &mut SystemBus, instruction: u32) {
 	let cond = (instruction >> (32 - 4)) as u8;
 	if cond_passed(cpu, cond) {
 		if (0x0fff_fff0 & instruction) == 0x012f_ff10 {
+			// BX
 			let rm = cpu.get_register_value((instruction & 0x0000_000f) as u8);
 			cpu.get_mut_cpsr().set_t((rm & 0x0000_0001) != 0);
 			cpu.set_register_value(PROGRAM_COUNTER_REGISTER, rm & 0xffff_fffe);
@@ -57,6 +58,7 @@ pub fn operate_arm(cpu: &mut CPU, bus: &mut SystemBus, instruction: u32) {
 				cpu.set_register_value(rd_index, temp);
 			}
 		} else if (0x0f00_00f0 & instruction) == 0x0000_0090 {
+			// MUL/MLA Multiply
 			let s = (0x0010_0000 & instruction) != 0;
 			let rn_index = ((instruction & 0x0000_f000) >> 12) as u8;
 			let rn = cpu.get_register_value(rn_index);
@@ -345,7 +347,7 @@ pub fn operate_arm(cpu: &mut CPU, bus: &mut SystemBus, instruction: u32) {
 
 			let offset;
 			if i {
-				offset = (instruction & 0x0000_0f00 >> 4) | (instruction & 0x0000_000f);
+				offset = ((instruction & 0x0000_0f00) >> 4) | (instruction & 0x0000_000f);
 			} else {
 				let rm_index = (instruction & 0x0000_000f) as u8;
 				offset = cpu.get_register_value(rm_index);
@@ -719,7 +721,7 @@ pub fn operate_arm(cpu: &mut CPU, bus: &mut SystemBus, instruction: u32) {
 				// RSB
 				0x3 => {
 					// Borrowed if carries bits over
-					let (alu_out, borrowed) = shifter_operand.overflowing_add(rn);
+					let (alu_out, borrowed) = shifter_operand.overflowing_sub(rn);
 					cpu.set_register_value(rd_index, alu_out);
 
 					if s {

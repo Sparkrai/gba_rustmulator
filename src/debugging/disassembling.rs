@@ -1,7 +1,21 @@
 use num_traits::FromPrimitive;
 
+use crate::arm7tdmi::cpu::CPU;
 use crate::arm7tdmi::{sign_extend, EShiftType};
+use crate::system::{MemoryInterface, SystemBus};
 use bitvec::prelude::*;
+
+pub fn disassemble_instruction(cpu: &CPU, bus: &SystemBus) -> String {
+	// NOTE: Read CPU state
+	let pc = cpu.get_current_pc();
+	if cpu.get_cpsr().get_t() {
+		let instruction = bus.read_16(pc);
+		disassemble_thumb(instruction)
+	} else {
+		let instruction = bus.read_32(pc);
+		disassemble_arm(instruction)
+	}
+}
 
 pub fn disassemble_cond(cond: u8) -> &'static str {
 	match cond {
@@ -336,7 +350,7 @@ pub fn disassemble_arm(instruction: u32) -> String {
 		}
 
 		return format!("{}{}{} {} R{}, {}", l, b, t, disassemble_cond(cond), (instruction & 0x0000_f000) >> 12, address);
-	} else if (0x0e40_0F90 & instruction) == 0x0000_0090 {
+	} else if (0x0e00_0090 & instruction) == 0x0000_0090 {
 		let p = (0x0100_0000 & instruction) != 0;
 		let u = if (0x0080_0000 & instruction) != 0 { "+" } else { "-" };
 		let i = (0x0040_0000 & instruction) != 0;
@@ -361,7 +375,7 @@ pub fn disassemble_arm(instruction: u32) -> String {
 		let rn = (instruction & 0x000f_0000) >> 16;
 		let offset;
 		if i {
-			let nn = (instruction & 0x0000_0f00 >> 4) | (instruction & 0x0000_000f);
+			let nn = ((instruction & 0x0000_0f00) >> 4) | (instruction & 0x0000_000f);
 			offset = format!("#{}", nn);
 		} else {
 			let rm = instruction & 0x0000_000f;
@@ -376,7 +390,7 @@ pub fn disassemble_arm(instruction: u32) -> String {
 			address = format!("[R{}], {}{}", rn, u, offset);
 		}
 
-		return format!("{}{} {} R{}, {}", l, op, disassemble_cond(cond), instruction & 0x000f_0000, address);
+		return format!("{}{} {} R{}, {}", l, op, disassemble_cond(cond), (instruction & 0x0000_f000) >> 12, address);
 	} else if (0x0e00_0000 & instruction) == 0x0800_0000 {
 		let l = if (0x0010_0000 & instruction) > 0 { "LDM" } else { "STM" };
 		let w = if (0x0020_0000 & instruction) > 0 { "!" } else { "" };

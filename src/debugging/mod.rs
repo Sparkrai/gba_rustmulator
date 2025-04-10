@@ -3,10 +3,11 @@ use imgui::*;
 use crate::arm7tdmi::cpu::CPU;
 use crate::arm7tdmi::EOperatingMode;
 use crate::debugging::disassembling::{disassemble_arm, disassemble_thumb};
-use crate::system::{MemoryInterface, SystemBus};
+use crate::ppu::{Color, PALETTE_RAM_SIZE, VRAM_SIZE};
+use crate::system::{MemoryInterface, SystemBus, PALETTE_RAM_ADDR, VRAM_ADDR};
 use bitvec::prelude::*;
 
-mod disassembling;
+pub mod disassembling;
 
 pub fn build_memory_debug_window(
 	cpu: &CPU,
@@ -16,6 +17,7 @@ pub fn build_memory_debug_window(
 	debug_mode: &mut bool,
 	execute_step: &mut bool,
 	breakpoint_set: &mut bool,
+	write_flow_to_file: &mut bool,
 	breakpoint_address: &mut u32,
 	ui: &&mut Ui,
 ) {
@@ -64,6 +66,9 @@ pub fn build_memory_debug_window(
 				*breakpoint_address = new_address as u32;
 			}
 
+			ui.same_line(0.0);
+			ui.checkbox(im_str!("Write Flow"), write_flow_to_file);
+
 			ui.separator();
 			if let Some(scroll_token) = ChildWindow::new(im_str!("##ScrollingRegion")).begin(&ui) {
 				ui.columns(3, im_str!("system"), true);
@@ -105,6 +110,37 @@ pub fn build_memory_debug_window(
 				ui.columns(1, im_str!(""), false);
 
 				scroll_token.end(&ui);
+			}
+		});
+}
+
+pub fn build_tiles_debug_window(bus: &SystemBus, show_tiles_window: &mut bool, is_palette: &mut bool, texture_id: TextureId, ui: &&mut Ui) {
+	Window::new(im_str!("Tiles"))
+		.size([0.0, 0.0], Condition::FirstUseEver)
+		.opened(show_tiles_window)
+		.position([1400.0, 75.0], Condition::FirstUseEver)
+		.build(ui, || {
+			ui.text("Palette:");
+			for palette_index in 0..(PALETTE_RAM_SIZE / 2) as u32 {
+				if palette_index > 0 && palette_index % 16 != 0 {
+					ui.same_line(0.0);
+				}
+
+				let color = Color::new(bus.ppu.read_16(PALETTE_RAM_ADDR + palette_index * 2));
+				imgui::ColorButton::new(
+					im_str!(""),
+					[color.get_red() as f32 / 255.0, color.get_green() as f32 / 255.0, color.get_blue() as f32 / 255.0, 1.0],
+				)
+				.border(false)
+				.size([6.0, 6.0])
+				.tooltip(true)
+				.build(&ui);
+			}
+
+			ui.checkbox(im_str!("256 Colors"), is_palette);
+			if let Some(child_token) = ChildWindow::new(im_str!("##memory")).begin(&ui) {
+				Image::new(texture_id, [256.0, 384.0]).build(&ui);
+				child_token.end(&ui);
 			}
 		});
 }

@@ -1,3 +1,5 @@
+mod clipboard;
+
 use glium::glutin;
 use glium::glutin::event::{Event, WindowEvent};
 use glium::glutin::event_loop::{ControlFlow, EventLoop};
@@ -34,11 +36,11 @@ pub fn init(title: &str) -> System {
 	let mut imgui = Context::create();
 	imgui.set_ini_filename(None);
 
-	//	if let Some(backend) = clipboard::init() {
-	//		imgui.set_clipboard_backend(Box::new(backend));
-	//	} else {
-	//		eprintln!("Failed to initialize clipboard");
-	//	}
+	if let Some(backend) = clipboard::init() {
+		imgui.set_clipboard_backend(Box::new(backend));
+	} else {
+		eprintln!("Failed to initialize clipboard");
+	}
 
 	let mut platform = WinitPlatform::init(&mut imgui);
 	{
