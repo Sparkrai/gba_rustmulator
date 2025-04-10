@@ -1,3 +1,5 @@
+mod cpu;
+
 use std::fs::File;
 use std::io::Read;
 
@@ -17,9 +19,13 @@ fn main() {
 	}
 }
 
+fn print_assembly_line(line: &String, pc: usize) {
+	println!("{:#06X}| {}", pc, line);
+}
+
 fn decode_thumb(thumb_mode: &mut bool, data: &mut Vec<u8>, pc: &mut usize) {
 	let bytes: [u8; 2] = [data[*pc], data[*pc + 1]];
-	let instruction = u16::from_ne_bytes(bytes);
+	let instruction = u16::from_le_bytes(bytes);
 	if (0xf800 & instruction) == 0x1800 {
 		let op = if (0x0200 & instruction) > 0 { "ADD" } else { "SUB" };
 		let i = (0x0400 & instruction) > 0;
@@ -29,7 +35,7 @@ fn decode_thumb(thumb_mode: &mut bool, data: &mut Vec<u8>, pc: &mut usize) {
 			format!("#{:#X}", (0x01c0 & instruction) >> 6)
 		};
 
-		println!("{} R{}, R{}, {}", op, instruction & 0x0003, (instruction & 0x001c) >> 3, rn);
+		print_assembly_line(&format!("{} R{}, R{}, {}", op, instruction & 0x0003, (instruction & 0x001c) >> 3, rn), *pc);
 	} else if (0xe000 & instruction) == 0x0000 {
 		let op;
 		match (0x1800 & instruction) >> 11 {
@@ -39,7 +45,7 @@ fn decode_thumb(thumb_mode: &mut bool, data: &mut Vec<u8>, pc: &mut usize) {
 			_ => panic!("ERROR!!!")
 		}
 
-		println!("{} R{}, R{}, #{:#X}", op, instruction & 0x0003, (instruction & 0x001c) >> 3, (instruction & 0x07c0) >> 6);
+		print_assembly_line(&format!("{} R{}, R{}, #{:#X}", op, instruction & 0x0003, (instruction & 0x001c) >> 3, (instruction & 0x07c0) >> 6), *pc);
 	} else if (0xe000 & instruction) == 0x2000 {
 		let op;
 		match (0x1800 & instruction) >> 11 {
@@ -50,7 +56,7 @@ fn decode_thumb(thumb_mode: &mut bool, data: &mut Vec<u8>, pc: &mut usize) {
 			_ => panic!("ERROR!!!")
 		}
 
-		println!("{} R{}, #{:#X}", op, (instruction & 0x0700) >> 8, instruction & 0x00ff);
+		print_assembly_line(&format!("{} R{}, #{:#X}", op, (instruction & 0x0700) >> 8, instruction & 0x00ff), *pc);
 	} else if (0xfc00 & instruction) == 0x4000 {
 		let op;
 		match (0x03c0 & instruction) >> 6 {
@@ -73,7 +79,7 @@ fn decode_thumb(thumb_mode: &mut bool, data: &mut Vec<u8>, pc: &mut usize) {
 			_ => panic!("ERROR!!!")
 		}
 
-		println!("{} R{}, R{}", op, instruction & 0x0007, (instruction & 0x001c) >> 3);
+		print_assembly_line(&format!("{} R{}, R{}", op, instruction & 0x0007, (instruction & 0x001c) >> 3), *pc);
 	} else if (0xfc00 & instruction) == 0x4400 {
 		let op;
 		match (0x0300 & instruction) >> 8 {
@@ -90,15 +96,15 @@ fn decode_thumb(thumb_mode: &mut bool, data: &mut Vec<u8>, pc: &mut usize) {
 			format!("R{}, ", (instruction & 0x001c) >> 3)
 		};
 
-		println!("{} {}R{}", op, rd, instruction & 0x0007);
+		print_assembly_line(&format!("{} {}R{}", op, rd, instruction & 0x0007), *pc);
 
 		if op == "BX" {
 			*thumb_mode = !*thumb_mode;
 			println!("ARM ------------------------------------------------------------------------------------------------------------------------ ARM");
 		}
 	} else if (0xf800 & instruction) == 0x4800 {
-        println!("LDR R{}, PC, #{:#X}", (instruction & 0x0700) >> 8, instruction & 0x00ff);
-    } else if (0xf200 & instruction) == 0x5000 {
+		print_assembly_line(&format!("LDR R{}, PC, #{:#X}", (instruction & 0x0700) >> 8, instruction & 0x00ff), *pc);
+	} else if (0xf200 & instruction) == 0x5000 {
 		let op;
 		match (0x0c00 & instruction) >> 10 {
 			0x0 => op = "STR",
@@ -108,7 +114,7 @@ fn decode_thumb(thumb_mode: &mut bool, data: &mut Vec<u8>, pc: &mut usize) {
 			_ => panic!("ERROR!!!")
 		}
 
-		println!("{} R{}, R{}, R{}", op, instruction & 0x0007, (instruction & 0x0038) >> 3, (instruction & 0x01c0) >> 6);
+		print_assembly_line(&format!("{} R{}, R{}, R{}", op, instruction & 0x0007, (instruction & 0x0038) >> 3, (instruction & 0x01c0) >> 6), *pc);
 	} else if (0xf200 & instruction) == 0x5200 {
 		let op;
 		match (0x0c00 & instruction) >> 10 {
@@ -119,7 +125,7 @@ fn decode_thumb(thumb_mode: &mut bool, data: &mut Vec<u8>, pc: &mut usize) {
 			_ => panic!("ERROR!!!")
 		}
 
-		println!("{} R{}, R{}, R{}", op, instruction & 0x0007, (instruction & 0x0038) >> 3, (instruction & 0x01c0) >> 6);
+		print_assembly_line(&format!("{} R{}, R{}, R{}", op, instruction & 0x0007, (instruction & 0x0038) >> 3, (instruction & 0x01c0) >> 6), *pc);
 	} else if (0xe000 & instruction) == 0x6000 {
 		let op;
 		match (0x1800 & instruction) >> 11 {
@@ -130,19 +136,19 @@ fn decode_thumb(thumb_mode: &mut bool, data: &mut Vec<u8>, pc: &mut usize) {
 			_ => panic!("ERROR!!!")
 		}
 
-		println!("{} R{}, R{}, #{:#X}", op, instruction & 0x0007, (instruction & 0x0038) >> 3, (instruction & 0x07c0) >> 6);
+		print_assembly_line(&format!("{} R{}, R{}, #{:#X}", op, instruction & 0x0007, (instruction & 0x0038) >> 3, (instruction & 0x07c0) >> 6), *pc);
 	} else if (0xf000 & instruction) == 0x8000 {
 		let op = if (0x0800 & instruction) > 0 { "LDRH" } else { "STRH" };
-		println!("{} R{}, R{}, #{:#X}", op, instruction & 0x0007, (instruction & 0x0038) >> 3, (instruction & 0x07c0) >> 6);
+		print_assembly_line(&format!("{} R{}, R{}, #{:#X}", op, instruction & 0x0007, (instruction & 0x0038) >> 3, (instruction & 0x07c0) >> 6), *pc);
 	} else if (0xf000 & instruction) == 0x9000 {
 		let op = if (0x0800 & instruction) > 0 { "LDR" } else { "STR" };
-		println!("{} R{}, SP, #{:#X}", op, (instruction & 0x0700) >> 8, instruction & 0x00ff);
+		print_assembly_line(&format!("{} R{}, SP, #{:#X}", op, (instruction & 0x0700) >> 8, instruction & 0x00ff), *pc);
 	} else if (0xf000 & instruction) == 0xa000 {
 		let op = if (0x0800 & instruction) > 0 { "SP" } else { "PC" };
-		println!("ADD R{}, {}, #{:#X}", (instruction & 0x0700) >> 8, op, instruction & 0x00ff);
+		print_assembly_line(&format!("ADD R{}, {}, #{:#X}", (instruction & 0x0700) >> 8, op, instruction & 0x00ff), *pc);
 	} else if (0xff00 & instruction) == 0xb000 {
 		let sign = if (0x0080 & instruction) > 0 { "" } else { "-" };
-		println!("ADD SP, #{}{:#X}", sign, instruction & 0x00ef);
+		print_assembly_line(&format!("ADD SP, #{}{:#X}", sign, instruction & 0x00ef), *pc);
 	} else if (0xf600 & instruction) == 0xb400 {
 		let op = if (0x0800 & instruction) > 0 { "POP" } else { "PUSH" };
 		let r = if (0x0100 & instruction) > 0 {
@@ -160,7 +166,7 @@ fn decode_thumb(thumb_mode: &mut bool, data: &mut Vec<u8>, pc: &mut usize) {
 		}
 		regs = format!("{}{} }}", regs, r);
 
-		println!("{} {}", op, regs);
+		print_assembly_line(&format!("{} {}", op, regs), *pc);
 	} else if (0xf000 & instruction) == 0xc000 {
 		let op = if (0x0800 & instruction) > 0 { "LDMIA" } else { "STMIA" };
 
@@ -173,9 +179,9 @@ fn decode_thumb(thumb_mode: &mut bool, data: &mut Vec<u8>, pc: &mut usize) {
 		}
 		regs += " }";
 
-		println!("{} R{}!, {}", op, (instruction & 0x0700) >> 8, regs);
+		print_assembly_line(&format!("{} R{}!, {}", op, (instruction & 0x0700) >> 8, regs), *pc);
 	} else if (0xff00 & instruction) == 0xdf00 {
-		println!("SWI");
+		print_assembly_line(&format!("SWI"), *pc);
 	} else if (0xf000 & instruction) == 0xd000 {
 		let op;
 		match (0x0f00 & instruction) >> 8 {
@@ -198,15 +204,23 @@ fn decode_thumb(thumb_mode: &mut bool, data: &mut Vec<u8>, pc: &mut usize) {
 		}
 
 		// TODO: Interpret as signed
-		println!("{} Offset: {:#X}", op, instruction & 0x00ff);
+		print_assembly_line(&format!("{} Offset: {:#X}", op, instruction & 0x00ff), *pc);
 	} else if (0xf800 & instruction) == 0xf000 {
-		let hi = instruction & 0x07ff;
+		// TODO: Interpret as signed
+		let hi = (instruction & 0x07ff) as u32;
 
-		// TODO: Decode second part
+		*pc += 2;
+		let bytes2: [u8; 2] = [data[*pc], data[*pc + 1]];
+		let instruction2 = u16::from_le_bytes(bytes2);
+		if (0xf800 & instruction2) != 0xf800 {
+			panic!("Instruction after BL is not BL!!!");
+		}
+		let lo = (instruction & 0x07ff) as u32;
+		let offset = (hi << 12) & (lo << 1);
 
-		println!("BL Target: {:#X}", hi);
-	}  else if (0xf800 & instruction) == 0xe000 {
-
+		print_assembly_line(&format!("BL Target: {:#X}", *pc as u32 + 4 + offset), *pc);
+	} else {
+		print_assembly_line(&format!("Missing instruction!"), *pc);
 	}
 
 	*pc += 2;
@@ -214,25 +228,25 @@ fn decode_thumb(thumb_mode: &mut bool, data: &mut Vec<u8>, pc: &mut usize) {
 
 fn decode_arm(thumb_mode: &mut bool, data: &mut Vec<u8>, pc: &mut usize) {
 	let bytes: [u8; 4] = [data[*pc], data[*pc + 1], data[*pc + 2], data[*pc + 3]];
-	let instruction = u32::from_ne_bytes(bytes);
+	let instruction = u32::from_le_bytes(bytes);
 	let cond = instruction >> (32 - 4);
 	if (0x0fff_fff0 & instruction) == 0x012f_ff10 {
 		*thumb_mode = !*thumb_mode;
-		println!("BX {} R{}", cond, instruction & 0x0000_000f);
+		print_assembly_line(&format!("BX {} R{}", cond, instruction & 0x0000_000f), *pc);
 		println!("THUMB ------------------------------------------------------------------------------------------------------------------------ THUMB");
 	} else if (0x0e00_0000 & instruction) == 0x0a00_0000 {
 		if 1 << 24 & instruction > 0 {
-			println!("BL {} R{}", cond, instruction & 0x0000_000f);
+			print_assembly_line(&format!("BL {} R{}", cond, instruction & 0x0000_000f), *pc);
 		} else {
-			println!("B {} R{}", cond, instruction & 0x0000_000f);
+			print_assembly_line(&format!("B {} R{}", cond, instruction & 0x0000_000f), *pc);
 		}
 	} else if (0xe000_0010 & instruction) == 0x0600_0010 {
-		println!("Undefined instruction!");
+		print_assembly_line(&format!("Undefined instruction!"), *pc);
 	} else if (0x0fb0_0ff0 & instruction) == 0x0100_0090 {
 		if 1 << 22 & instruction > 0 {
-			println!("SWPB R{}, R{}, R{}", (instruction & 0x0000_f000) >> 12, instruction & 0x0000_000f, (instruction & 0x000f_0000) >> 16);
+			print_assembly_line(&format!("SWPB R{}, R{}, R{}", (instruction & 0x0000_f000) >> 12, instruction & 0x0000_000f, (instruction & 0x000f_0000) >> 16), *pc);
 		} else {
-			println!("SWP R{}, R{}, R{}", (instruction & 0x0000_f000) >> 12, instruction & 0x0000_000f, (instruction & 0x000f_0000) >> 16);
+			print_assembly_line(&format!("SWP R{}, R{}, R{}", (instruction & 0x0000_f000) >> 12, instruction & 0x0000_000f, (instruction & 0x000f_0000) >> 16), *pc);
 		}
 	} else if (0x0f00_00f0 & instruction) == 0x0000_0090 {
 		let s = if (0x0010_0000 & instruction) > 0 { "S" } else { "" };
@@ -249,12 +263,12 @@ fn decode_arm(thumb_mode: &mut bool, data: &mut Vec<u8>, pc: &mut usize) {
 		}
 
 		// TODO: Revisit params!!!
-		println!("{}{} R{}, R{}, R{}", op, s, (instruction & 0x000f_0000) >> 16, instruction & 0x0000_000f, (instruction & 0x0000_0f00) >> 8);
+		print_assembly_line(&format!("{}{} R{}, R{}, R{}", op, s, (instruction & 0x000f_0000) >> 16, instruction & 0x0000_000f, (instruction & 0x0000_0f00) >> 8), *pc);
 	} else if (0x0fbf_0fff & instruction) == 0x010f_0000 {
 		if (instruction & 0x0010_0000) > 0 {
-			println!("MRS R{}, CPSR", (instruction & 0x0000_f000) >> 12, );
+			print_assembly_line(&format!("MRS R{}, CPSR", (instruction & 0x0000_f000) >> 12, ), *pc);
 		} else {
-			println!("MRS R{}, SPSR", (instruction & 0x0000_f000) >> 12, );
+			print_assembly_line(&format!("MRS R{}, SPSR", (instruction & 0x0000_f000) >> 12, ), *pc);
 		}
 	} else if (0x0db0_f000 & instruction) == 0x0129_f000 {
 		let mut fields = String::from("");
@@ -275,16 +289,16 @@ fn decode_arm(thumb_mode: &mut bool, data: &mut Vec<u8>, pc: &mut usize) {
 		}
 		let psr = if (instruction & 0x0010_0000) > 0 { "CPSR" } else { "SPSR" };
 		if (instruction & 0x0200_0000) > 0 {
-			println!("MSR {}{}, #{:#X}", psr, fields, instruction & 0x0000_00ff);
+			print_assembly_line(&format!("MSR {}{}, #{:#X}", psr, fields, instruction & 0x0000_00ff), *pc);
 		} else {
-			println!("MSR {}{}, R{}", psr, fields, instruction & 0x0000_00ff);
+			print_assembly_line(&format!("MSR {}{}, R{}", psr, fields, instruction & 0x0000_00ff), *pc);
 		}
 	} else if (0x0c00_0000 & instruction) == 0x0400_0000 {
 		let b = if (0x0040_0000 & instruction) > 0 { "B" } else { "" };
 		let t = if (0x0020_0000 & instruction) > 0 { "T" } else { "" };
 		let l = if (0x0010_0000 & instruction) > 0 { "LDR" } else { "STR" };
 
-		println!("{}{}{} R{}", l, b, t, (instruction & 0x0000_f000) >> 12);
+		print_assembly_line(&format!("{}{}{} R{}", l, b, t, (instruction & 0x0000_f000) >> 12), *pc);
 	} else if (0x0e40_0F90 & instruction) == 0x0000_0090 {
 		let l = if (0x0010_0000 & instruction) > 0 { "LDR" } else { "STR" };
 		let op;
@@ -298,7 +312,7 @@ fn decode_arm(thumb_mode: &mut bool, data: &mut Vec<u8>, pc: &mut usize) {
 			panic!("ERROR!!!");
 		}
 
-		println!("{}{} R{}", l, op, instruction & 0x0000_000f);
+		print_assembly_line(&format!("{}{} R{}", l, op, instruction & 0x0000_000f), *pc);
 	} else if (0x0e40_0090 & instruction) == 0x0040_0090 {
 		let l = if (0x0010_0000 & instruction) > 0 { "LDR" } else { "STR" };
 		let op;
@@ -312,7 +326,7 @@ fn decode_arm(thumb_mode: &mut bool, data: &mut Vec<u8>, pc: &mut usize) {
 			panic!("ERROR!!!");
 		}
 
-		println!("{}{} #{:#X}", l, op, (instruction & 0x0000_0f00) >> 4 | instruction & 0x0000_000f);
+		print_assembly_line(&format!("{}{} #{:#X}", l, op, (instruction & 0x0000_0f00) >> 4 | instruction & 0x0000_000f), *pc);
 	} else if (0x0e00_0000 & instruction) == 0x0800_0000 {
 		let l = if (0x0010_0000 & instruction) > 0 { "LDM" } else { "STM" };
 		let w = if (0x0020_0000 & instruction) > 0 { "!" } else { "" };
@@ -329,9 +343,9 @@ fn decode_arm(thumb_mode: &mut bool, data: &mut Vec<u8>, pc: &mut usize) {
 		}
 		regs += " }";
 
-		println!("{}{}{} R{}{}, {}{}", l, u, p, (instruction & 0x000f_0000) >> 16, w, regs, s);
+		print_assembly_line(&format!("{}{}{} R{}{}, {}{}", l, u, p, (instruction & 0x000f_0000) >> 16, w, regs, s), *pc);
 	} else if (0x0f00_0000 & instruction) == 0x0f00_0000 {
-		println!("SWI");
+		print_assembly_line(&format!("SWI"), *pc);
 	} else if (0x0c00_0000 & instruction) == 0x0000_0000 {
 		let i = (0x0200_0000 & instruction) > 0;
 		let s = if (0x0010_0000 & instruction) > 0 { "S" } else { "" };
@@ -383,9 +397,9 @@ fn decode_arm(thumb_mode: &mut bool, data: &mut Vec<u8>, pc: &mut usize) {
 			format!("R{}", 0x0000_000f & instruction)
 		};
 
-		println!("{}{} {}{} {}", op, s, rd, rn, op2);
+		print_assembly_line(&format!("{}{} {}{} {}", op, s, rd, rn, op2), *pc);
 	} else {
-		println!("Missing instruction!");
+		print_assembly_line(&format!("Missing instruction!"), *pc);
 	}
 
 	*pc += 4;
