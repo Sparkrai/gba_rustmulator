@@ -1,3 +1,9 @@
+# FASM
+*.bin
+
+# GBA
+*.sav
+
 
 # Created by https://www.gitignore.io/api/rust,windows,intellij,visualstudiocode
 # Edit at https://www.gitignore.io/?templates=rust,windows,intellij,visualstudiocode
