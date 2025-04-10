@@ -74,7 +74,7 @@ impl CPU {
 	}
 
 	pub fn get_current_pc(&self) -> u32 {
-		return self.registers[PROGRAM_COUNTER_REGISTER as usize];
+		self.registers[PROGRAM_COUNTER_REGISTER as usize]
 	}
 
 	/// The length in bytes of an instruction in the current CPU state.

@@ -14,7 +14,7 @@ pub const SPRITE_PALETTE_START_INDEX: usize = 0x100;
 pub const PALETTE_RAM_SIZE: usize = 1024;
 pub const VRAM_SIZE: usize = 0x1_8000;
 pub const VRAM_MIRRORED_SIZE: usize = 0x2_0000;
-pub const OAM_SIZE: usize = 1 * 1024;
+pub const OAM_SIZE: usize = 1024;
 
 // TODO: Add green swap
 pub const DISP_CNT_ADDRESS: u32 = 0x0;
@@ -261,7 +261,7 @@ impl<'a> SpriteEntry<'a> {
 
 fn compute_vram_address(address: u32) -> usize {
 	let clamped_address = address as usize & (VRAM_MIRRORED_SIZE - 1);
-	if clamped_address >= VRAM_SIZE && clamped_address < VRAM_MIRRORED_SIZE {
+	if (VRAM_SIZE..VRAM_MIRRORED_SIZE).contains(&clamped_address) {
 		clamped_address - (VRAM_MIRRORED_SIZE - VRAM_SIZE)
 	} else {
 		clamped_address
@@ -1210,14 +1210,14 @@ impl MemoryInterface for PPU {
 					BG1_CNT_ADDRESS => self.bg_controls[1].data[shift16..shift16 + 8].store_le(value),
 					BG2_CNT_ADDRESS => self.bg_controls[2].data[shift16..shift16 + 8].store_le(value),
 					BG3_CNT_ADDRESS => self.bg_controls[3].data[shift16..shift16 + 8].store_le(value),
-					BG0_HOFS_ADDRESS => self.bg_hofs[0] = (value as u16) << shift16 | self.bg_hofs[0],
-					BG0_VOFS_ADDRESS => self.bg_vofs[0] = (value as u16) << shift16 | self.bg_vofs[0],
-					BG1_HOFS_ADDRESS => self.bg_hofs[1] = (value as u16) << shift16 | self.bg_hofs[1],
-					BG1_VOFS_ADDRESS => self.bg_vofs[1] = (value as u16) << shift16 | self.bg_vofs[1],
-					BG2_HOFS_ADDRESS => self.bg_hofs[2] = (value as u16) << shift16 | self.bg_hofs[2],
-					BG2_VOFS_ADDRESS => self.bg_vofs[2] = (value as u16) << shift16 | self.bg_vofs[2],
-					BG3_HOFS_ADDRESS => self.bg_hofs[3] = (value as u16) << shift16 | self.bg_hofs[3],
-					BG3_VOFS_ADDRESS => self.bg_vofs[3] = (value as u16) << shift16 | self.bg_vofs[3],
+					BG0_HOFS_ADDRESS => self.bg_hofs[0] |= (value as u16) << shift16,
+					BG0_VOFS_ADDRESS => self.bg_vofs[0] |= (value as u16) << shift16,
+					BG1_HOFS_ADDRESS => self.bg_hofs[1] |= (value as u16) << shift16,
+					BG1_VOFS_ADDRESS => self.bg_vofs[1] |= (value as u16) << shift16,
+					BG2_HOFS_ADDRESS => self.bg_hofs[2] |= (value as u16) << shift16,
+					BG2_VOFS_ADDRESS => self.bg_vofs[2] |= (value as u16) << shift16,
+					BG3_HOFS_ADDRESS => self.bg_hofs[3] |= (value as u16) << shift16,
+					BG3_VOFS_ADDRESS => self.bg_vofs[3] |= (value as u16) << shift16,
 					BG2_PA_ADDRESS => self.bg_affine_matrices[0].pa.data[shift16..shift16 + 8].store_le(value),
 					BG2_PB_ADDRESS => self.bg_affine_matrices[0].pb.data[shift16..shift16 + 8].store_le(value),
 					BG2_PC_ADDRESS => self.bg_affine_matrices[0].pc.data[shift16..shift16 + 8].store_le(value),

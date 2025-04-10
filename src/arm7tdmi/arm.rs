@@ -7,7 +7,7 @@ use crate::arm7tdmi::cpu::{CpuResult, CPU, LINK_REGISTER_REGISTER, PROGRAM_COUNT
 use crate::arm7tdmi::{cond_passed, load_32_from_memory, sign_extend, EExceptionType, EOperatingMode, EShiftType};
 use crate::system::{Gba32BitRegister, Gba32BitSlice, MemoryInterface, SystemBus};
 
-/// Exposes common information about an ARM instruction
+/// Exposes common information about an encoded ARM instruction
 struct ArmInstruction {
 	data: Gba32BitRegister,
 }
@@ -23,6 +23,7 @@ impl ArmInstruction {
 		self.data[28..32].load_le()
 	}
 
+	// Registers
 	pub fn get_rd_index(&self) -> u8 {
 		self.data[12..16].load_le()
 	}
@@ -43,6 +44,7 @@ impl ArmInstruction {
 		self.data[20]
 	}
 
+	// Flags
 	pub fn get_i(&self) -> bool {
 		self.data[25]
 	}
@@ -67,14 +69,11 @@ impl ArmInstruction {
 		self.data[20]
 	}
 
-	pub fn get_ldr_s(&self) -> bool {
-		self.data[22]
-	}
-
 	pub fn get_r(&self) -> bool {
 		self.data[22]
 	}
 
+	// Immediates
 	pub fn get_offset_12(&self) -> u32 {
 		self.data[0..12].load_le()
 	}
@@ -122,7 +121,7 @@ pub fn execute_arm(cpu: &mut CPU, bus: &mut SystemBus, raw_instruction: u32) -> 
 				(cpu.get_register_value(PROGRAM_COUNTER_REGISTER) as i32).wrapping_add(offset << 2) as u32,
 			);
 			return CpuResult::FlushPipeline;
-		} else if (0xe000_0010 & raw_instruction) == 0x0600_0010 {
+		} else if (0x0e00_0010 & raw_instruction) == 0x0600_0010 {
 			// Undefined instruction
 			cpu.exception(EExceptionType::Undefined);
 			return CpuResult::FlushPipeline;
@@ -158,13 +157,16 @@ pub fn execute_arm(cpu: &mut CPU, bus: &mut SystemBus, raw_instruction: u32) -> 
 		} else if (0x0f00_00f0 & raw_instruction) == 0x0000_0090 {
 			// MUL/MLA Multiply
 			let s = instruction.get_alu_s();
-			let rn_index = instruction.get_rn_index();
+
+			// NOTE: Rn and Rd Registers are inverted!!!
+			let rn_index = instruction.get_rd_index();
 			let rn = cpu.get_register_value(rn_index);
 			let rs = cpu.get_register_value(instruction.get_rs_index());
 			let rm = cpu.get_register_value(instruction.get_rm_index());
-			let rd_index = instruction.get_rd_index();
+			let rd_index = instruction.get_rn_index();
 
-			match instruction.data[21..23].load_le::<u8>() {
+			// NOTE: Bit 24 is only used from ARMv5 and up
+			match instruction.data[21..24].load_le::<u8>() {
 				// MUL
 				0x0 => {
 					let alu_out = rm.wrapping_mul(rs);
@@ -437,24 +439,22 @@ pub fn execute_arm(cpu: &mut CPU, bus: &mut SystemBus, raw_instruction: u32) -> 
 					};
 					bus.write_8(address, rd as u8);
 				}
-			} else {
-				if l {
-					let data = load_32_from_memory(bus, address);
+			} else if l {
+				let data = load_32_from_memory(bus, address);
 
-					if rd_index == PROGRAM_COUNTER_REGISTER {
-						cpu.set_register_value(rd_index, data & !0x3);
-					} else {
-						cpu.set_register_value(rd_index, data);
-					}
+				if rd_index == PROGRAM_COUNTER_REGISTER {
+					cpu.set_register_value(rd_index, data & !0x3);
 				} else {
-					let rd = if rd_index == PROGRAM_COUNTER_REGISTER {
-						cpu.get_register_value(PROGRAM_COUNTER_REGISTER) + 4
-					} else {
-						cpu.get_register_value(rd_index)
-					};
-					// NOTE: Forced alignment! (UNPREDICTABLE)
-					bus.write_32(address & !0x0000_0003, rd);
+					cpu.set_register_value(rd_index, data);
 				}
+			} else {
+				let rd = if rd_index == PROGRAM_COUNTER_REGISTER {
+					cpu.get_register_value(PROGRAM_COUNTER_REGISTER) + 4
+				} else {
+					cpu.get_register_value(rd_index)
+				};
+				// NOTE: Forced alignment! (UNPREDICTABLE)
+				bus.write_32(address & !0x0000_0003, rd);
 			}
 
 			if !l {
@@ -534,13 +534,11 @@ pub fn execute_arm(cpu: &mut CPU, bus: &mut SystemBus, raw_instruction: u32) -> 
 							// NOTE: Read byte! (UNPREDICTABLE)
 							data = bus.read_8(address) as i8 as u32;
 						}
+					} else if (address & 0x0000_0001) == 0 {
+						data = bus.read_16(address) as u32;
 					} else {
-						if (address & 0x0000_0001) == 0 {
-							data = bus.read_16(address) as u32;
-						} else {
-							// NOTE: Forced alignment and rotation of data! (UNPREDICTABLE)
-							data = (bus.read_16(address & !0x1) as u32).rotate_right(8);
-						}
+						// NOTE: Forced alignment and rotation of data! (UNPREDICTABLE)
+						data = (bus.read_16(address & !0x1) as u32).rotate_right(8);
 					}
 				} else {
 					// S
@@ -584,7 +582,7 @@ pub fn execute_arm(cpu: &mut CPU, bus: &mut SystemBus, raw_instruction: u32) -> 
 			let u = instruction.get_u();
 			let w = instruction.get_w();
 			let l = instruction.get_l();
-			let s = instruction.get_ldr_s();
+			let s = instruction.get_b(); // Reused from LDR/STR flag
 
 			// NOTE: Forced alignment!!!
 			let rn_index = instruction.get_rn_index();
@@ -602,12 +600,10 @@ pub fn execute_arm(cpu: &mut CPU, bus: &mut SystemBus, raw_instruction: u32) -> 
 					} else {
 						address = aligned_rn;
 					}
+				} else if p {
+					address = aligned_rn.wrapping_sub(0x40);
 				} else {
-					if p {
-						address = aligned_rn.wrapping_sub(0x40);
-					} else {
-						address = aligned_rn.wrapping_sub(0x40) + 4;
-					}
+					address = aligned_rn.wrapping_sub(0x40) + 4;
 				}
 
 				if w {
@@ -644,14 +640,12 @@ pub fn execute_arm(cpu: &mut CPU, bus: &mut SystemBus, raw_instruction: u32) -> 
 						start_address = aligned_rn;
 						end_address = aligned_rn.wrapping_add(4 * (reg_list.count_ones() as u32)) - 4;
 					}
+				} else if p {
+					start_address = aligned_rn.wrapping_sub(4 * (reg_list.count_ones() as u32));
+					end_address = aligned_rn - 4;
 				} else {
-					if p {
-						start_address = aligned_rn.wrapping_sub(4 * (reg_list.count_ones() as u32));
-						end_address = aligned_rn - 4;
-					} else {
-						start_address = aligned_rn.wrapping_sub(4 * (reg_list.count_ones() as u32)) + 4;
-						end_address = aligned_rn;
-					}
+					start_address = aligned_rn.wrapping_sub(4 * (reg_list.count_ones() as u32)) + 4;
+					end_address = aligned_rn;
 				}
 
 				let store_rn = reg_list[rn_index as usize];
@@ -711,12 +705,10 @@ pub fn execute_arm(cpu: &mut CPU, bus: &mut SystemBus, raw_instruction: u32) -> 
 							// NOTE: UNPREDICTABLE BEHAVIOR
 							let value = if first && i == rn_index as usize {
 								rn
+							} else if i as u8 == PROGRAM_COUNTER_REGISTER {
+								cpu.get_register_value(PROGRAM_COUNTER_REGISTER) + 4
 							} else {
-								if i as u8 == PROGRAM_COUNTER_REGISTER {
-									cpu.get_register_value(PROGRAM_COUNTER_REGISTER) + 4
-								} else {
-									cpu.get_register_value(i as u8)
-								}
+								cpu.get_register_value(i as u8)
 							};
 
 							bus.write_32(address, value);

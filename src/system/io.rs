@@ -375,8 +375,8 @@ impl MemoryInterface for IORegisters {
 			KEYINPUT_ADDRESS => self.key_input.data[shift..shift + 8].load_le(),
 			IE_ADDRESS => self.interrupt_enable.data[shift..shift + 8].load_le(),
 			IF_ADDRESS => self.interrupt_request.data[shift..shift + 8].load_le(),
-			IME_ADDRESS => return if shift == 0 { self.ime as u8 } else { 0 },
-			POSTFLG_ADDRESS => return if shift == 0 { self.post_flag.data.load_le() } else { 0 },
+			IME_ADDRESS => if shift == 0 { self.ime as u8 } else { 0 },
+			POSTFLG_ADDRESS => if shift == 0 { self.post_flag.data.load_le() } else { 0 },
 			_ => 0x0, // TODO: Return proper invalid value
 		}
 	}

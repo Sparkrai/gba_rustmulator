@@ -1,22 +1,123 @@
 use bitvec::prelude::*;
-use num_traits::PrimInt;
+use num_traits::{FromPrimitive, PrimInt};
 
-use crate::arm7tdmi::cpu::{CpuResult, CPU, LINK_REGISTER_REGISTER, PROGRAM_COUNTER_REGISTER, STACK_POINTER_REGISTER};
 use crate::arm7tdmi::{cond_passed, load_32_from_memory, sign_extend, EExceptionType, EShiftType};
 use crate::system::{MemoryInterface, SystemBus};
+use crate::{
+	arm7tdmi::cpu::{CpuResult, CPU, LINK_REGISTER_REGISTER, PROGRAM_COUNTER_REGISTER, STACK_POINTER_REGISTER},
+	system::{Gba16BitRegister, Gba16BitSlice},
+};
 
-pub fn execute_thumb(instruction: u16, cpu: &mut CPU, bus: &mut SystemBus) -> CpuResult {
+/// Exposes common information about an encoded THUMB instruction
+struct ThumbInstruction {
+	data: Gba16BitRegister,
+}
+
+impl ThumbInstruction {
+	pub fn new(instruction: u16) -> Self {
+		Self {
+			data: Gba16BitRegister::new([instruction; 1]),
+		}
+	}
+	pub fn get_cond(&self) -> u8 {
+		self.data[8..12].load_le()
+	}
+
+	// Registers
+	pub fn get_rd_index(&self) -> u8 {
+		self.data[0..3].load_le()
+	}
+
+	pub fn get_rn_index(&self) -> u8 {
+		self.data[3..6].load_le()
+	}
+
+	/// Index of high Register Rd
+	pub fn get_hi_rd_index(&self) -> u8 {
+		self.data[0..3].load_le::<u8>() | ((self.data[7] as u8) << 3)
+	}
+
+	/// Index of high Register Rm
+	pub fn get_hi_rm_index(&self) -> u8 {
+		self.data[3..7].load_le()
+	}
+
+	pub fn get_rm_index(&self) -> u8 {
+		self.data[6..9].load_le()
+	}
+
+	pub fn get_rs_index(&self) -> u8 {
+		self.data[8..11].load_le()
+	}
+
+	// Flags
+	pub fn get_b(&self) -> bool {
+		self.data[12]
+	}
+
+	pub fn get_l(&self) -> bool {
+		self.data[11]
+	}
+
+	pub fn get_i(&self) -> bool {
+		self.data[10]
+	}
+
+	pub fn get_is_sub(&self) -> bool {
+		self.data[9]
+	}
+	
+	pub fn get_r(&self) -> bool {
+		self.data[8]
+	}
+	
+	pub fn get_is_neg(&self) -> bool {
+		self.data[7]
+	}
+
+	// Immediates
+	pub fn get_offset_11(&self) -> u32 {
+		self.data[0..11].load_le()
+	}
+
+	pub fn get_imm_8(&self) -> u32 {
+		self.data[0..8].load_le()
+	}
+
+	pub fn get_signed_imm_8(&self) -> i32 {
+		self.data[0..8].load_le::<u8>() as i8 as i32
+	}
+
+	pub fn get_imm_6(&self) -> u32 {
+		self.data[0..7].load_le()
+	}
+
+	pub fn get_imm_5(&self) -> u32 {
+		self.data[6..11].load_le()
+	}
+
+	pub fn get_shift_type(&self) -> EShiftType {
+		FromPrimitive::from_u8(self.data[11..=12].load_le::<u8>()).unwrap()
+	}
+
+	pub fn get_register_list(&self) -> &Gba16BitSlice {
+		&self.data[0..8]
+	}
+}
+
+pub fn execute_thumb(raw_instruction: u16, cpu: &mut CPU, bus: &mut SystemBus) -> CpuResult {
+	let instruction = ThumbInstruction::new(raw_instruction);
 	// ADD / SUB register
-	if (0xf800 & instruction) == 0x1800 {
-		let is_sub = (0x0200 & instruction) != 0;
-		let i = (0x0400 & instruction) != 0;
+	if (0xf800 & raw_instruction) == 0x1800 {
+		let is_sub = instruction.get_is_sub();
+		let i = instruction.get_i();
 
-		let rn = cpu.get_register_value(((0x0038 & instruction) >> 3) as u8);
-		let rd_index = (0x0007 & instruction) as u8;
+		let rn = cpu.get_register_value(instruction.get_rn_index());
+		let rd_index = instruction.get_rd_index();
 		let operand = if i {
-			((0x01c0 & instruction) >> 6) as u32
+			instruction.get_rm_index() as u32
 		} else {
-			cpu.get_register_value(((0x01c0 & instruction) >> 6) as u8)
+			cpu.get_register_value(instruction.get_rm_index())
 		};
 
 		if is_sub {
@@ -44,18 +145,13 @@ pub fn execute_thumb(instruction: u16, cpu: &mut CPU, bus: &mut SystemBus) -> Cp
 			cpu.get_mut_cpsr().set_c(borrowed);
 			cpu.get_mut_cpsr().set_v(overflow);
 		}
-	} else if (0xe000 & instruction) == 0x0000 {
+	} else if (0xe000 & raw_instruction) == 0x0000 {
 		// Move shifted register (LSL/LSR/ASR)
-		let shift_type = match (0x1800 & instruction) >> 11 {
-			0x0 => EShiftType::LSL,
-			0x1 => EShiftType::LSR,
-			0x2 => EShiftType::ASR,
-			_ => panic!("ERROR!!!"),
-		};
+		let shift_type = instruction.get_shift_type();
 
-		let offset = (0x07c0 & instruction) >> 6;
-		let rd_index = (0x0007 & instruction) as u8;
-		let rm = cpu.get_register_value(((0x0038 & instruction) >> 3) as u8);
+		let offset = instruction.get_imm_5();
+		let rd_index = instruction.get_rd_index();
+		let rm = cpu.get_register_value(instruction.get_rn_index());
 		let alu_out;
 		let shifter_carry_out;
 		match shift_type {
@@ -100,12 +196,12 @@ pub fn execute_thumb(instruction: u16, cpu: &mut CPU, bus: &mut SystemBus) -> Cp
 		cpu.get_mut_cpsr().set_n((alu_out & 0x8000_0000) != 0);
 		cpu.get_mut_cpsr().set_z(alu_out == 0);
 		cpu.get_mut_cpsr().set_c(shifter_carry_out);
-	} else if (0xe000 & instruction) == 0x2000 {
+	} else if (0xe000 & raw_instruction) == 0x2000 {
 		// ALU immediate
-		let rd_index = ((0x0700 & instruction) >> 8) as u8;
+		let rd_index = instruction.get_rs_index();
 		let rd = cpu.get_register_value(rd_index);
-		let operand = (0x00ff & instruction) as u32;
-		let op = (0x1800 & instruction) >> 11;
+		let operand = instruction.get_imm_8();
+		let op: u32 = instruction.data[11..=12].load_le();
 		match op {
 			// MOV
 			0x0 => {
@@ -156,12 +252,12 @@ pub fn execute_thumb(instruction: u16, cpu: &mut CPU, bus: &mut SystemBus) -> Cp
 			}
 			_ => panic!("ERROR!!!"),
 		}
-	} else if (0xfc00 & instruction) == 0x4000 {
+	} else if (0xfc00 & raw_instruction) == 0x4000 {
 		// ALU register
-		let rm = cpu.get_register_value(((0x0038 & instruction) >> 3) as u8);
-		let rd_index = (0x0007 & instruction) as u8;
+		let rm = cpu.get_register_value(instruction.get_rn_index());
+		let rd_index = instruction.get_rd_index();
 		let rd = cpu.get_register_value(rd_index);
-		let op = (0x03c0 & instruction) >> 6;
+		let op: u32 = instruction.data[6..=9].load_le();
 		match op {
 			// AND
 			0x0 => {
@@ -392,22 +488,23 @@ pub fn execute_thumb(instruction: u16, cpu: &mut CPU, bus: &mut SystemBus) -> Cp
 			}
 			_ => panic!("ERROR!!!"),
 		}
-	} else if (0xff80 & instruction) == 0x4700 {
+	} else if (0xff80 & raw_instruction) == 0x4700 {
 		// Branch exchange (BX)
-		let rm = cpu.get_register_value(((instruction & 0x0078) >> 3) as u8);
+		let rm = cpu.get_register_value(instruction.get_hi_rm_index());
 
-		cpu.get_mut_cpsr().set_t((0x1 & rm) != 0);
+		let t = (0x1 & rm) != 0;
+		cpu.get_mut_cpsr().set_t(t);
 
 		// NOTE: Enforce alignment
-		let address = if cpu.get_cpsr().get_t() { rm & !0x1 } else { rm & !0x3 };
+		let address = if t { rm & !0x1 } else { rm & !0x3 };
 		cpu.set_register_value(PROGRAM_COUNTER_REGISTER, address);
 		return CpuResult::FlushPipeline;
-	} else if (0xfc00 & instruction) == 0x4400 {
+	} else if (0xfc00 & raw_instruction) == 0x4400 {
 		// Hi register ALUs
-		let rm = cpu.get_register_value(((instruction & 0x0078) >> 3) as u8);
-		let rd_index = ((instruction & 0x0007) | ((instruction & 0x0080) >> 4)) as u8;
+		let rm = cpu.get_register_value(instruction.get_hi_rm_index());
+		let rd_index = instruction.get_hi_rd_index();
 		let rd = cpu.get_register_value(rd_index);
-		match (0x0300 & instruction) >> 8 {
+		match instruction.data[8..=9].load_le::<u32>() {
 			// ADD
 			0x0 => cpu.set_register_value(rd_index, rd.wrapping_add(rm)),
 			// CMP
@@ -433,21 +530,23 @@ pub fn execute_thumb(instruction: u16, cpu: &mut CPU, bus: &mut SystemBus) -> Cp
 		if rd_index == PROGRAM_COUNTER_REGISTER {
 			return CpuResult::FlushPipeline;
 		}
-	} else if (0xf800 & instruction) == 0x4800 {
+	} else if (0xf800 & raw_instruction) == 0x4800 {
 		// LDR PC relative
-		let rd_index = ((instruction & 0x0700) >> 8) as u8;
-		let operand = instruction & 0x00ff;
+		let rd_index = instruction.get_rs_index();
+		let operand = instruction.get_imm_8();
 
 		let address = (cpu.get_register_value(PROGRAM_COUNTER_REGISTER) & 0xffff_fffc) + (operand * 4) as u32;
 		cpu.set_register_value(rd_index, bus.read_32(address));
-	} else if (0xf200 & instruction) == 0x5000 {
+	} else if (0xf200 & raw_instruction) == 0x5000 {
 		// LDR/STR with register offset
-		let l = (0x0800 & instruction) != 0;
-		let b = (0x0400 & instruction) != 0;
+		let l = instruction.get_l();
 
-		let rm = cpu.get_register_value(((0x01c0 & instruction) >> 6) as u8);
-		let rn = cpu.get_register_value(((0x0038 & instruction) >> 3) as u8);
-		let rd_index = (0x0007 & instruction) as u8;
+		// NOTE: Flag is in bits 10
+		let b = instruction.get_i();
+
+		let rm = cpu.get_register_value(instruction.get_rm_index());
+		let rn = cpu.get_register_value(instruction.get_rn_index());
+		let rd_index = instruction.get_rd_index();
 
 		let address = rn.wrapping_add(rm);
 		if l {
@@ -467,58 +566,61 @@ pub fn execute_thumb(instruction: u16, cpu: &mut CPU, bus: &mut SystemBus) -> Cp
 				bus.write_32(address & !0x0000_0003, rd);
 			}
 		}
-	} else if (0xf200 & instruction) == 0x5200 {
+	} else if (0xf200 & raw_instruction) == 0x5200 {
 		// LDR/STR sign-extended byte/halfword
-		let rm = cpu.get_register_value(((0x01c0 & instruction) >> 6) as u8);
-		let rn = cpu.get_register_value(((0x0038 & instruction) >> 3) as u8);
-		let rd_index = (0x0007 & instruction) as u8;
+		let rm = cpu.get_register_value(instruction.get_rm_index());
+		let rn = cpu.get_register_value(instruction.get_rn_index());
+		let rd_index = instruction.get_rd_index();
 
 		let address = rn.wrapping_add(rm);
-		let op = (0x0c00 & instruction) >> 10;
+
+		let l = instruction.get_l();
+		
+		// NOTE: Flag is in bits 10
+		let s = instruction.get_i();
 
 		// STRH
-		if op == 0 {
+		if !l && !s {
 			let rd = cpu.get_register_value(rd_index);
 			// NOTE: Forced alignment! (UNPREDICTABLE)
 			bus.write_16(address & !0x1, rd as u16);
 		} else {
 			let data;
-			match op {
-				// LDSB
-				0x1 => {
+			// LDSH
+			if s && l {
+				if (address & 0x0000_0001) == 0 {
+					data = bus.read_16(address) as i16 as u32;
+				} else {
+					// NOTE: Read byte! (UNPREDICTABLE)
 					data = bus.read_8(address) as i8 as u32;
 				}
-				// LDRH
-				0x2 => {
-					if (address & 0x0000_0001) == 0 {
-						data = bus.read_16(address) as u32;
-					} else {
-						// NOTE: Forced alignment and rotation of data! (UNPREDICTABLE)
-						data = (bus.read_16(address & !0x1) as u32).rotate_right(8);
-					}
+			}
+			// LDSB
+			else if s {
+				data = bus.read_8(address) as i8 as u32;
+			}
+			// LDRH
+			else if l {
+				if (address & 0x0000_0001) == 0 {
+					data = bus.read_16(address) as u32;
+				} else {
+					// NOTE: Forced alignment and rotation of data! (UNPREDICTABLE)
+					data = (bus.read_16(address & !0x1) as u32).rotate_right(8);
 				}
-				// LDSH
-				0x3 => {
-					if (address & 0x0000_0001) == 0 {
-						data = bus.read_16(address) as i16 as u32;
-					} else {
-						// NOTE: Read byte! (UNPREDICTABLE)
-						data = bus.read_8(address) as i8 as u32;
-					}
-				}
-				_ => panic!("IMPOSSIBLE"),
+			} else {
+				std::unreachable!();
 			}
 
 			cpu.set_register_value(rd_index, data);
 		}
-	} else if (0xe000 & instruction) == 0x6000 {
+	} else if (0xe000 & raw_instruction) == 0x6000 {
 		// LDR/STR with immediate offset
-		let b = (0x1000 & instruction) != 0;
-		let l = (0x0800 & instruction) != 0;
+		let l = instruction.get_l();
+		let b = instruction.get_b();
 
-		let offset = ((0x07c0 & instruction) >> 6) as u32;
-		let rn = cpu.get_register_value(((0x0038 & instruction) >> 3) as u8);
-		let rd_index = (0x0007 & instruction) as u8;
+		let offset = instruction.get_imm_5();
+		let rn = cpu.get_register_value(instruction.get_rn_index());
+		let rd_index = instruction.get_rd_index();
 
 		let address = if b { rn.wrapping_add(offset) } else { rn.wrapping_add(offset * 4) };
 
@@ -540,13 +642,13 @@ pub fn execute_thumb(instruction: u16, cpu: &mut CPU, bus: &mut SystemBus) -> Cp
 				bus.write_32(address & !0x0000_0003, rd);
 			}
 		}
-	} else if (0xf000 & instruction) == 0x8000 {
+	} else if (0xf000 & raw_instruction) == 0x8000 {
 		// LDR/STR halfword with immediate offset
-		let l = (0x0800 & instruction) != 0;
+		let l = instruction.get_l();
 
-		let offset = ((0x07c0 & instruction) >> 6) as u32;
-		let rn = cpu.get_register_value(((0x0038 & instruction) >> 3) as u8);
-		let rd_index = (0x0007 & instruction) as u8;
+		let offset = instruction.get_imm_5();
+		let rn = cpu.get_register_value(instruction.get_rn_index());
+		let rd_index = instruction.get_rd_index();
 
 		let address = rn.wrapping_add(offset * 2);
 		if l {
@@ -564,12 +666,12 @@ pub fn execute_thumb(instruction: u16, cpu: &mut CPU, bus: &mut SystemBus) -> Cp
 			// NOTE: Forced alignment! (UNPREDICTABLE)
 			bus.write_16(address & !0x0000_0001, rd as u16);
 		}
-	} else if (0xf000 & instruction) == 0x9000 {
+	} else if (0xf000 & raw_instruction) == 0x9000 {
 		// LDR/STR SP relative
-		let l = (0x0800 & instruction) != 0;
+		let l = instruction.get_l();
 
-		let offset = (0x00ff & instruction) as u32;
-		let rd_index = ((instruction & 0x0700) >> 8) as u8;
+		let offset = instruction.get_imm_8();
+		let rd_index = instruction.get_rs_index();
 
 		let address = cpu.get_register_value(STACK_POINTER_REGISTER).wrapping_add(offset * 4);
 		if l {
@@ -581,11 +683,11 @@ pub fn execute_thumb(instruction: u16, cpu: &mut CPU, bus: &mut SystemBus) -> Cp
 			// NOTE: Forced alignment! (UNPREDICTABLE)
 			bus.write_32(address & !0x0000_0003, rd);
 		}
-	} else if (0xf000 & instruction) == 0xa000 {
+	} else if (0xf000 & raw_instruction) == 0xa000 {
 		// ADD Get relative offset
-		let sp = (0x0800 & instruction) != 0;
-		let rd_index = ((instruction & 0x0700) >> 8) as u8;
-		let operand = (instruction & 0x00ff) as u32;
+		let sp = instruction.get_l();
+		let rd_index = instruction.get_rs_index();
+		let operand = instruction.get_imm_8();
 
 		let value;
 		if sp {
@@ -595,10 +697,10 @@ pub fn execute_thumb(instruction: u16, cpu: &mut CPU, bus: &mut SystemBus) -> Cp
 		}
 
 		cpu.set_register_value(rd_index, value);
-	} else if (0xff00 & instruction) == 0xb000 {
+	} else if (0xff00 & raw_instruction) == 0xb000 {
 		// ADD offset to Stack Pointer
-		let is_sub = (0x0080 & instruction) != 0;
-		let operand = (instruction & 0x007f) as u32;
+		let is_sub = instruction.get_is_neg();
+		let operand = instruction.get_imm_6();
 		let sp = cpu.get_register_value(STACK_POINTER_REGISTER);
 
 		if is_sub {
@@ -606,13 +708,12 @@ pub fn execute_thumb(instruction: u16, cpu: &mut CPU, bus: &mut SystemBus) -> Cp
 		} else {
 			cpu.set_register_value(STACK_POINTER_REGISTER, sp.wrapping_add(operand << 2));
 		}
-	} else if (0xf600 & instruction) == 0xb400 {
+	} else if (0xf600 & raw_instruction) == 0xb400 {
 		// PUSH/POP
-		let pop = (0x0800 & instruction) != 0;
-		let r = (0x0100 & instruction) != 0;
+		let pop = instruction.get_l();
+		let r = instruction.get_r();
 		let sp = cpu.get_register_value(STACK_POINTER_REGISTER);
-		let regs_value = 0x00ff & instruction;
-		let reg_list = regs_value.view_bits::<Lsb0>();
+		let reg_list = instruction.get_register_list();
 
 		if pop {
 			// NOTE: Forced alignment!
@@ -660,12 +761,12 @@ pub fn execute_thumb(instruction: u16, cpu: &mut CPU, bus: &mut SystemBus) -> Cp
 		if pop && r {
 			return CpuResult::FlushPipeline;
 		}
-	} else if (0xf000 & instruction) == 0xc000 {
+	} else if (0xf000 & raw_instruction) == 0xc000 {
 		// LDMIA/STMIA
-		let l = (0x0800 & instruction) != 0;
-		let rn_index = ((0x0700 & instruction) >> 8) as u8;
+		let l = instruction.get_l();
+		let rn_index = instruction.get_rs_index();
 		let rn = cpu.get_register_value(rn_index);
-		let reg_list = &instruction.view_bits::<Lsb0>()[0..8];
+		let reg_list = instruction.get_register_list();
 
 		// NOTE: UNPREDICTABLE!!!
 		if reg_list.not_any() {
@@ -718,15 +819,15 @@ pub fn execute_thumb(instruction: u16, cpu: &mut CPU, bus: &mut SystemBus) -> Cp
 				debug_assert_eq!(end_address, address.wrapping_sub(4));
 			}
 		}
-	} else if (0xff00 & instruction) == 0xdf00 {
+	} else if (0xff00 & raw_instruction) == 0xdf00 {
 		// SWI Software Interrupt Exception
 		cpu.exception(EExceptionType::SoftwareInterrupt);
 		return CpuResult::FlushPipeline;
-	} else if (0xf000 & instruction) == 0xd000 {
+	} else if (0xf000 & raw_instruction) == 0xd000 {
 		// Conditional Branch
-		let cond = ((0x0f00 & instruction) >> 8) as u8;
+		let cond = instruction.get_cond();
 		if cond_passed(cpu, cond) {
-			let offset = ((instruction & 0x00ff) as i8 as i32) << 1;
+			let offset = instruction.get_signed_imm_8() << 1;
 
 			cpu.set_register_value(
 				PROGRAM_COUNTER_REGISTER,
@@ -734,24 +835,24 @@ pub fn execute_thumb(instruction: u16, cpu: &mut CPU, bus: &mut SystemBus) -> Cp
 			);
 			return CpuResult::FlushPipeline;
 		}
-	} else if (0xf800 & instruction) == 0xe000 {
+	} else if (0xf800 & raw_instruction) == 0xe000 {
 		// Unconditional Branch
-		let offset = sign_extend(instruction & 0x07ff, 11) << 1;
+		let offset = sign_extend(instruction.get_offset_11(), 11) << 1;
 		cpu.set_register_value(
 			PROGRAM_COUNTER_REGISTER,
 			(cpu.get_register_value(PROGRAM_COUNTER_REGISTER) as i32).wrapping_add(offset) as u32,
 		);
 		return CpuResult::FlushPipeline;
-	} else if (0xf000 & instruction) == 0xf000 {
+	} else if (0xf000 & raw_instruction) == 0xf000 {
 		// BL
-		let h = (0x0800 & instruction) != 0;
+		let h = instruction.get_l();
 		let pc = cpu.get_register_value(PROGRAM_COUNTER_REGISTER) as i32;
 
 		if !h {
-			let offset = sign_extend(instruction & 0x07ff, 11);
+			let offset = sign_extend(instruction.get_offset_11(), 11);
 			cpu.set_register_value(LINK_REGISTER_REGISTER, pc.wrapping_add(offset << 12) as u32);
 		} else {
-			let offset = (instruction & 0x07ff) as u32;
+			let offset = instruction.get_offset_11();
 			let lr = cpu.get_register_value(LINK_REGISTER_REGISTER);
 			cpu.set_register_value(PROGRAM_COUNTER_REGISTER, lr.wrapping_add(offset << 1) as u32);
 			// NOTE: Address of next instruction

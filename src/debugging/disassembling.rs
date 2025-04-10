@@ -59,11 +59,11 @@ pub fn get_register_list(instruction: u32, thumb: bool) -> String {
 	}
 	regs += " }";
 
-	return regs;
+	regs
 }
 
 pub fn disassemble_thumb(instruction: u16) -> String {
-	return if (0xf800 & instruction) == 0x1800 {
+	if (0xf800 & instruction) == 0x1800 {
 		let op = if (0x0200 & instruction) != 0 { "SUB" } else { "ADD" };
 		let i = (0x0400 & instruction) != 0;
 		let rn = if i {
@@ -238,8 +238,8 @@ pub fn disassemble_thumb(instruction: u16) -> String {
 		let lo = sign_extend(instruction & 0x07ff, 11);
 		format!("#{}", lo << 1)
 	} else {
-		format!("Missing instruction!")
-	};
+		"Missing instruction!".to_string()
+	}
 }
 
 pub fn disassemble_arm(instruction: u32) -> String {
@@ -252,8 +252,8 @@ pub fn disassemble_arm(instruction: u32) -> String {
 		} else {
 			return format!("B {} #{}", disassemble_cond(cond), instruction & 0x00ff_ffff);
 		}
-	} else if (0xe000_0010 & instruction) == 0x0600_0010 {
-		return format!("Undefined instruction!");
+	} else if (0x0e00_0010 & instruction) == 0x0600_0010 {
+		"Undefined instruction!".to_string()
 	} else if (0x0fb0_0ff0 & instruction) == 0x0100_0090 {
 		if 1 << 22 & instruction > 0 {
 			return format!(
@@ -340,7 +340,7 @@ pub fn disassemble_arm(instruction: u32) -> String {
 		};
 	} else if (0x0db0_f000 & instruction) == 0x0120_f000 {
 		let mut fields = String::from("");
-		if (0x0008_000 & instruction) > 0 {
+		if (0x0008_0000 & instruction) > 0 {
 			fields += "f";
 		}
 		if (0x0004_0000 & instruction) > 0 {
@@ -352,7 +352,7 @@ pub fn disassemble_arm(instruction: u32) -> String {
 		if (0x0001_0000 & instruction) > 0 {
 			fields += "c";
 		}
-		if fields.len() > 0 {
+		if !fields.is_empty() {
 			fields = String::from("_") + &*fields;
 		}
 		let psr = if (instruction & 0x0040_0000) > 0 { "SPSR" } else { "CPSR" };
@@ -383,13 +383,11 @@ pub fn disassemble_arm(instruction: u32) -> String {
 				format!("{:?}", shift_type)
 			};
 			address = format!("[R{}, R{}, {} #{}]", rn, rm, shift_type_text, shift);
+		} else if p {
+			let pre = if w { "!" } else { "" };
+			address = format!("[R{}, #{}{}]{}", rn, u, instruction & 0x0000_0fff, pre);
 		} else {
-			if p {
-				let pre = if w { "!" } else { "" };
-				address = format!("[R{}, #{}{}]{}", rn, u, instruction & 0x0000_0fff, pre);
-			} else {
-				address = format!("[R{}], #{}{}", rn, u, instruction & 0x0000_0fff);
-			}
+			address = format!("[R{}], #{}{}", rn, u, instruction & 0x0000_0fff);
 		}
 
 		return format!("{}{}{} {} R{}, {}", l, b, t, disassemble_cond(cond), (instruction & 0x0000_f000) >> 12, address);
@@ -516,6 +514,6 @@ pub fn disassemble_arm(instruction: u32) -> String {
 
 		return format!("{}{} {} {}{} {}", op, s, disassemble_cond(cond), rd, rn, shifter_operand);
 	} else {
-		return format!("Missing instruction!");
+		"Missing instruction!".to_string()
 	}
 }

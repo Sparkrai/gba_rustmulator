@@ -8,13 +8,16 @@
             "program": "${workspaceFolder}/target/debug/gba_rustmulator.exe",
             "args": [],
             "cwd": "${workspaceFolder}",
-            "environment": [{
-				"name": "RUST_BACKTRACE",
-				"value": "1"
-			}],
-			"preLaunchTask": "cargo build",
-		},
-		{
+            "environment": [
+                {
+                    "name": "RUST_BACKTRACE",
+                    "value": "1"
+                }
+            ],
+            "preLaunchTask": "cargo build",
+            "console": "integratedTerminal"
+        },
+        {
             "name": "(Windows) Launch Release",
             "type": "cppvsdbg",
             "request": "launch",
@@ -22,17 +25,16 @@
             "args": [],
             "cwd": "${workspaceFolder}",
             "environment": [],
-			"preLaunchTask": "cargo build release"
+            "preLaunchTask": "cargo build release",
+            "console": "integratedTerminal"
         },
         {
             "type": "lldb",
             "request": "launch",
-            "name": "LLDB 'gba_rustmulator'",
+            "name": "LLDB",
             "cargo": {
                 "args": [
-                    "build",
-                    "--bin=gba_rustmulator",
-                    "--package=gba_rustmulator"
+                    "build"
                 ],
                 "filter": {
                     "name": "gba_rustmulator",
@@ -41,21 +43,22 @@
             },
             "args": [],
             "cwd": "${workspaceFolder}",
-            "sourceLanguages": ["rust"],
+            "sourceLanguages": [
+                "rust"
+            ],
             "env": {
                 "RUST_BACKTRACE": "1",
-            }
+            },
+            "console": "integratedTerminal"
         },
         {
             "type": "lldb",
             "request": "launch",
-            "name": "LLDB Release 'gba_rustmulator'",
+            "name": "LLDB Release",
             "cargo": {
                 "args": [
                     "build",
-                    "--release",
-                    "--bin=gba_rustmulator",
-                    "--package=gba_rustmulator"
+                    "--release"
                 ],
                 "filter": {
                     "name": "gba_rustmulator",
@@ -64,15 +67,18 @@
             },
             "args": [],
             "cwd": "${workspaceFolder}",
-            "sourceLanguages": ["rust"],
+            "sourceLanguages": [
+                "rust"
+            ],
             "env": {
                 "RUST_BACKTRACE": "1",
-            }
+            },
+            "console": "integratedTerminal"
         },
         {
             "type": "lldb",
             "request": "launch",
-            "name": "Debug unit tests in executable 'gba_rustmulator'",
+            "name": "Debug unit tests",
             "cargo": {
                 "args": [
                     "test",
@@ -86,7 +92,8 @@
                 }
             },
             "args": [],
-            "cwd": "${workspaceFolder}"
+            "cwd": "${workspaceFolder}",
+            "console": "integratedTerminal"
         }
     ]
 }

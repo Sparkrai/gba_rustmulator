@@ -31,6 +31,7 @@ pub const CARTRIDGE_WS2_HI: u32 = 0x0D00_0000;
 pub const CARTRIDGE_SRAM_LO: u32 = 0x0E00_0000;
 
 pub type Gba32BitSlice = BitSlice<Lsb0, u32>;
+pub type Gba16BitSlice = BitSlice<Lsb0, u16>;
 pub type Gba8BitSlice = BitSlice<Lsb0, u8>;
 pub type Gba32BitRegister = BitArray<Lsb0, [u32; 1]>;
 pub type Gba16BitRegister = BitArray<Lsb0, [u16; 1]>;

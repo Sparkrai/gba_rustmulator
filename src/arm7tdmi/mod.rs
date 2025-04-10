@@ -1,7 +1,7 @@
 use num_derive::*;
 use num_traits::{AsPrimitive, PrimInt};
 
-use crate::arm7tdmi::cpu::{CPU, PROGRAM_COUNTER_REGISTER};
+use crate::arm7tdmi::cpu::CPU;
 use crate::system::{MemoryInterface, SystemBus};
 
 mod arm;

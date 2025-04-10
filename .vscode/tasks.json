@@ -7,11 +7,23 @@
 			"problemMatcher": [
 				"$rustc"
 			],
+			"group": "build",
+			"label": "cargo build"
+		},
+		{
+			"type": "cargo",
+			"command": "build",
+			"args": [
+				"--release"
+			],
+			"problemMatcher": [
+				"$rustc"
+			],
 			"group": {
 				"kind": "build",
 				"isDefault": true
 			},
-			"label": "cargo build"
+			"label": "cargo build release"
 		}
 	]
 }

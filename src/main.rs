@@ -4,7 +4,6 @@ use std::rc::Rc;
 use std::time::{Duration, Instant};
 
 use bitvec::prelude::*;
-use glium;
 use glium::glutin::event::{ElementState, Event, VirtualKeyCode, WindowEvent};
 use glium::glutin::event_loop::ControlFlow;
 use glium::uniforms::{SamplerBehavior, SamplerWrapFunction};

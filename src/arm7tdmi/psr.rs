@@ -14,7 +14,7 @@ impl PSR {
 		let mut result = Self { data: bitarr![Lsb0, u32; 0; 32] };
 		result.set_mode_bits(EOperatingMode::SystemMode.to_u8().unwrap());
 
-		return result;
+		result
 	}
 
 	pub fn get_value(&self) -> u32 {
