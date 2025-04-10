@@ -11,7 +11,7 @@ use crate::system::{OAM_ADDR, PALETTE_RAM_ADDR, VRAM_ADDR};
 pub const PPU_REGISTERS_END: u32 = 0x56;
 pub const SCREEN_TOTAL_PIXELS: usize = 38400;
 pub const SPRITE_TILES_START_ADDRESS: usize = 0x10000;
-pub const SPRITE_PALETTE_START_ADDRESS: usize = 0x200;
+pub const SPRITE_PALETTE_START_ADDRESS: u32 = 0x200;
 
 pub const PALETTE_RAM_SIZE: usize = 1 * 1024;
 pub const VRAM_SIZE: usize = 96 * 1024;
@@ -572,19 +572,16 @@ impl PPU {
 										};
 
 										let tile_pixel = ((pixel_x % 8) + (pixel_y % 8) * 8) as usize;
-										let palette_entry = (self.vram[tile_address + tile_pixel]) as usize;
+										let palette_entry = (self.vram[tile_address + tile_pixel]) as u32;
 
 										if palette_entry != 0 {
 											let color;
 											if sprite.get_is_256_palette() {
-												color = Color::new(
-													(self.palette_ram[SPRITE_PALETTE_START_ADDRESS + palette_entry * 2 + 1] as u16) << 8
-														| self.palette_ram[SPRITE_PALETTE_START_ADDRESS + palette_entry * 2] as u16,
-												);
+												color = Color::new(self.read_16(PALETTE_RAM_ADDR as u32 + SPRITE_PALETTE_START_ADDRESS + palette_entry * 2));
 											} else {
-												let palette_offset = sprite.get_palette_number() as usize * 16;
-												let color_address = SPRITE_PALETTE_START_ADDRESS + (palette_offset + palette_entry) * 2;
-												color = Color::new((self.palette_ram[color_address + 1] as u16) << 8 | self.palette_ram[color_address] as u16);
+												let palette_offset = sprite.get_palette_number() as u32 * 16;
+												let color_address = PALETTE_RAM_ADDR as u32 + SPRITE_PALETTE_START_ADDRESS + (palette_offset + palette_entry) * 2;
+												color = Color::new(self.read_16(color_address));
 											}
 
 											pixels[pixel_index] = color.get_red();
@@ -605,9 +602,9 @@ impl PPU {
 						for x in 0..240 {
 							let bitmap_index = (x as usize + (y as usize * 240));
 							let pixel_index = bitmap_index * 3;
-							let palette_entry = (self.vram[starting_address + bitmap_index]) as usize;
+							let palette_entry = (self.vram[starting_address + bitmap_index]) as u32;
 
-							let color = Color::new((self.palette_ram[palette_entry * 2 + 1] as u16) << 8 | self.palette_ram[palette_entry * 2] as u16);
+							let color = Color::new(self.read_16(PALETTE_RAM_ADDR as u32 + palette_entry * 2));
 
 							pixels[pixel_index] = color.get_red();
 							pixels[pixel_index + 1] = color.get_green();

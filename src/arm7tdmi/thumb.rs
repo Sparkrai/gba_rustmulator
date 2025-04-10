@@ -490,7 +490,7 @@ pub fn operate_thumb(instruction: u16, cpu: &mut CPU, bus: &mut SystemBus) {
 						data = bus.read_16(address) as u32;
 					} else {
 						// NOTE: Forced alignment and rotation of data! (UNPREDICTABLE)
-						data = bus.read_16(address & !0x1).rotate_right(8) as u32;
+						data = (bus.read_16(address & !0x1) as u32).rotate_right(8);
 					}
 				}
 				// LDSH
@@ -556,7 +556,7 @@ pub fn operate_thumb(instruction: u16, cpu: &mut CPU, bus: &mut SystemBus) {
 				data = bus.read_16(address) as u32;
 			} else {
 				// NOTE: Forced alignment and rotation of data! (UNPREDICTABLE)
-				data = bus.read_16(address & !0x0000_0001).rotate_right(8) as u32;
+				data = (bus.read_16(address & !0x0000_0001) as u32).rotate_right(8);
 			}
 
 			cpu.set_register_value(rd_index, data);
