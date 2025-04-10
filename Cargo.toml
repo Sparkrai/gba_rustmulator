@@ -19,7 +19,7 @@
     spin_sleep = "1.0"
 
 [profile.dev]
-	opt-level = 1
+	opt-level = 0
 	
 [profile.release]
 	lto = true

@@ -44,7 +44,7 @@ fn main() {
 		let mut show_memory_debug_window = true;
 		let mut show_demo_window = false;
 
-		let mut debug_mode = false;
+		let mut debug_mode = true;
 		let mut execute_step = false;
 		let mut breakpoint_set = false;
 		let mut breakpoint_address = 0x0u32;
@@ -131,15 +131,31 @@ fn main() {
 					if !debug_mode || execute_step {
 						if execute_step {
 							execute_step = false;
-						}
-
-						const CYCLES_PER_FRAME: u32 = 280_896;
-						for cycle in 0..=CYCLES_PER_FRAME {
 							arm7tdmi::decode(&mut cpu, &mut bus);
+						} else {
+							const CYCLES_PER_FRAME: u32 = 280_896;
+							for cycle in 0..=CYCLES_PER_FRAME {
+								if bus.io_regs.get_ime() {
+									// H-Blank Interrupt
+									if bus.io_regs.get_ie().get_h_blank() && bus.ppu.get_disp_stat().get_h_blank_irq() && (cycle.wrapping_sub(960) % 1232 == 0) {
+										bus.io_regs.get_if().set_h_blank(true);
+										//										bus.ppu.get_disp_stat().set_h_blank(true);
+										cpu.exception(crate::arm7tdmi::EExceptionType::Irq);
+									} else if bus.io_regs.get_ie().get_v_blank() && bus.ppu.get_disp_stat().get_v_blank_irq() && cycle == 197120 {
+										// V-Blank Interrupt
+										bus.io_regs.get_if().set_v_blank(true);
+										//										bus.ppu.get_disp_stat().set_v_blank(true);
+										cpu.exception(crate::arm7tdmi::EExceptionType::Irq);
+									}
+								}
 
-							if breakpoint_set {
-								if cpu.get_current_pc() == breakpoint_address {
-									debug_mode = true;
+								arm7tdmi::decode(&mut cpu, &mut bus);
+
+								if breakpoint_set {
+									if cpu.get_current_pc() == breakpoint_address {
+										debug_mode = true;
+										break;
+									}
 								}
 							}
 						}

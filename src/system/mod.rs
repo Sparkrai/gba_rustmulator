@@ -1,12 +1,11 @@
-mod mapped_registers;
+mod io;
 
-use crate::ppu::PPU;
+use crate::ppu::{PPU, PPU_REGISTERS_END};
+use crate::system::io::{IORegisters, IO_REGISTERS_END};
 
 // Sizes
 pub const EWRAM_SIZE: usize = 256 * 1024;
 pub const IWRAM_SIZE: usize = 32 * 1024;
-
-pub const IO_SIZE: usize = 0x3FE;
 
 pub const CARTRIDGE_ROM_SIZE: usize = 0x01FF_FFFF; // 32Mb
 pub const CARTRIDGE_SRAM_SIZE: usize = 64 * 1024;
@@ -44,7 +43,7 @@ pub struct SystemBus {
 	bios: Box<[u8]>,
 	ewram: Box<[u8]>,
 	iwram: Box<[u8]>,
-	io_regs: Box<[u8]>,
+	pub io_regs: IORegisters,
 	pub ppu: PPU,
 	cartridge_rom: Box<[u8]>,
 	cartridge_sram: Box<[u8]>,
@@ -56,7 +55,7 @@ impl SystemBus {
 			bios: bios_data,
 			ewram: vec![0; EWRAM_SIZE].into_boxed_slice(),
 			iwram: vec![0; IWRAM_SIZE].into_boxed_slice(),
-			io_regs: vec![0; IO_SIZE].into_boxed_slice(),
+			io_regs: IORegisters::new(),
 			ppu: PPU::new(),
 			cartridge_rom: cartridge_data,
 			cartridge_sram: vec![0; CARTRIDGE_SRAM_SIZE].into_boxed_slice(),
@@ -68,7 +67,7 @@ impl SystemBus {
 			bios: bios_data,
 			ewram: vec![0; EWRAM_SIZE].into_boxed_slice(),
 			iwram: vec![0; IWRAM_SIZE].into_boxed_slice(),
-			io_regs: vec![0; IO_SIZE].into_boxed_slice(),
+			io_regs: IORegisters::new(),
 			ppu: PPU::new(),
 			cartridge_rom: vec![0; CARTRIDGE_ROM_SIZE].into_boxed_slice(),
 			cartridge_sram: vec![0; CARTRIDGE_SRAM_SIZE].into_boxed_slice(),
@@ -90,11 +89,10 @@ impl MemoryInterface for SystemBus {
 			EWRAM_ADDR => self.ewram[(address & 0x3_ffff) as usize],
 			IWRAM_ADDR => self.iwram[(address & 0x7fff) as usize],
 			IO_ADDR => {
-				let addr = if address & 0xffff == 0x8000 { 0x800 } else { address & 0x3fe };
-				if addr <= 0x56 {
+				if address & 0x00ff_ffff <= PPU_REGISTERS_END {
 					self.ppu.read_8(address)
 				} else {
-					self.io_regs[addr as usize]
+					self.io_regs.read_8(address)
 				}
 			}
 			PALETTE_RAM_ADDR | VRAM_ADDR | OAM_ADDR => self.ppu.read_8(address),
@@ -109,11 +107,10 @@ impl MemoryInterface for SystemBus {
 			EWRAM_ADDR => self.ewram[(address & 0x3_ffff) as usize] = value,
 			IWRAM_ADDR => self.iwram[(address & 0x7fff) as usize] = value,
 			IO_ADDR => {
-				let addr = if address & 0xffff == 0x8000 { 0x800 } else { address & 0x3fe };
-				if addr <= 0x56 {
+				if address & 0x00ff_ffff <= PPU_REGISTERS_END {
 					self.ppu.write_8(address, value);
 				} else {
-					self.io_regs[addr as usize] = value
+					self.io_regs.write_8(address, value);
 				}
 			}
 			PALETTE_RAM_ADDR | VRAM_ADDR | OAM_ADDR => self.ppu.write_8(address, value),
@@ -139,11 +136,10 @@ impl MemoryInterface for SystemBus {
 				EWRAM_ADDR => *(self.ewram.as_ptr().offset((address & 0x3_ffff) as isize) as *mut u16) as u16,
 				IWRAM_ADDR => *(self.iwram.as_ptr().offset((address & 0x7fff) as isize) as *mut u16) as u16,
 				IO_ADDR => {
-					let addr = if address & 0xffff == 0x8000 { 0x800 } else { address & 0x3fe };
-					if addr <= 0x56 {
+					if address & 0x00ff_ffff <= PPU_REGISTERS_END {
 						self.ppu.read_16(address)
 					} else {
-						*(self.io_regs.as_ptr().offset((addr) as isize) as *mut u16) as u16
+						self.io_regs.read_16(address)
 					}
 				}
 				PALETTE_RAM_ADDR | VRAM_ADDR | OAM_ADDR => self.ppu.read_16(address),
@@ -162,11 +158,10 @@ impl MemoryInterface for SystemBus {
 				EWRAM_ADDR => *(self.ewram.as_ptr().offset((address & 0x3_ffff) as isize) as *mut u16) = value,
 				IWRAM_ADDR => *(self.iwram.as_ptr().offset((address & 0x7fff) as isize) as *mut u16) = value,
 				IO_ADDR => {
-					let addr = if address & 0xffff == 0x8000 { 0x800 } else { address & 0x3fe };
-					if addr <= 0x56 {
+					if address & 0x00ff_ffff <= PPU_REGISTERS_END {
 						self.ppu.write_16(address, value);
 					} else {
-						*(self.io_regs.as_ptr().offset((addr) as isize) as *mut u16) = value
+						self.io_regs.write_16(address, value);
 					}
 				}
 				PALETTE_RAM_ADDR | VRAM_ADDR | OAM_ADDR => self.ppu.write_16(address, value),
@@ -193,11 +188,10 @@ impl MemoryInterface for SystemBus {
 				EWRAM_ADDR => *(self.ewram.as_ptr().offset((address & 0x3_ffff) as isize) as *mut u32) as u32,
 				IWRAM_ADDR => *(self.iwram.as_ptr().offset((address & 0x7fff) as isize) as *mut u32) as u32,
 				IO_ADDR => {
-					let addr = if address & 0xffff == 0x8000 { 0x800 } else { address & 0x3fe };
-					if addr <= 0x56 {
+					if address & 0x00ff_ffff <= PPU_REGISTERS_END {
 						self.ppu.read_32(address)
 					} else {
-						*(self.io_regs.as_ptr().offset((addr) as isize) as *mut u32) as u32
+						self.io_regs.read_32(address)
 					}
 				}
 				PALETTE_RAM_ADDR | VRAM_ADDR | OAM_ADDR => self.ppu.read_32(address),
@@ -216,11 +210,10 @@ impl MemoryInterface for SystemBus {
 				EWRAM_ADDR => *(self.ewram.as_ptr().offset((address & 0x3_ffff) as isize) as *mut u32) = value,
 				IWRAM_ADDR => *(self.iwram.as_ptr().offset((address & 0x7fff) as isize) as *mut u32) = value,
 				IO_ADDR => {
-					let addr = if address & 0xffff == 0x8000 { 0x800 } else { address & 0x3fe };
-					if addr <= 0x56 {
+					if address & 0x00ff_ffff <= PPU_REGISTERS_END {
 						self.ppu.write_32(address, value);
 					} else {
-						*(self.io_regs.as_ptr().offset((addr) as isize) as *mut u32) = value
+						self.io_regs.write_32(address, value);
 					}
 				}
 				PALETTE_RAM_ADDR | VRAM_ADDR | OAM_ADDR => self.ppu.write_32(address, value),

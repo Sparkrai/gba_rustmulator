@@ -8,11 +8,13 @@ use crate::system::MemoryInterface;
 use crate::system::{OAM_ADDR, PALETTE_RAM_ADDR, VRAM_ADDR};
 use num_traits::FromPrimitive;
 
+pub const PPU_REGISTERS_END: u32 = 0x56;
 pub const SCREEN_TOTAL_PIXELS: usize = 38400;
 
 pub const PALETTE_RAM_SIZE: usize = 1 * 1024;
 pub const VRAM_SIZE: usize = 96 * 1024;
 pub const OAM_SIZE: usize = 1 * 1024;
+
 pub const DISP_CNT_RANGE: Range<usize> = 0x0..0x2;
 pub const DISP_STAT_RANGE: Range<usize> = 0x4..0x6;
 pub const VCOUNT_RANGE: Range<usize> = 0x6..0x8;
@@ -166,9 +168,8 @@ pub struct PPU {
 
 impl PPU {
 	pub fn new() -> Self {
-		let registers = vec![0; 0x56].into_boxed_slice();
 		Self {
-			registers,
+			registers: vec![0; 0x56].into_boxed_slice(),
 			//			disp_cnt: &registers[DISPCNT_RANGE].view_bits(),
 			//			disp_stat: &registers[0x4..0x6].view_bits(),
 			//			vcount: &registers[0x6..0x8].view_bits(),
@@ -212,7 +213,152 @@ impl PPU {
 		}
 	}
 
-	pub fn render(&self) -> Vec<u8> {
+	pub fn get_disp_cnt(&mut self) -> DispCnt {
+		DispCnt::new(self.registers[DISP_CNT_RANGE].view_bits_mut())
+	}
+
+	pub fn get_disp_stat(&mut self) -> DispStat {
+		DispStat::new(self.registers[DISP_STAT_RANGE].view_bits_mut())
+	}
+
+	fn get_vcount(&self) -> u8 {
+		self.registers[VCOUNT_RANGE].view_bits::<Lsb0>()[0..8].load_le()
+	}
+
+	fn get_bg0_cnt(&self) -> BgCnt {
+		BgCnt::new(self.registers[BG0_CNT_RANGE].view_bits())
+	}
+
+	fn get_bg1_cnt(&self) -> BgCnt {
+		BgCnt::new(self.registers[BG1_CNT_RANGE].view_bits())
+	}
+
+	fn get_bg2_cnt(&self) -> BgCnt {
+		BgCnt::new(self.registers[BG2_CNT_RANGE].view_bits())
+	}
+
+	fn get_bg3_cnt(&self) -> BgCnt {
+		BgCnt::new(self.registers[BG3_CNT_RANGE].view_bits())
+	}
+
+	// FIXME: Check if 8 or 9!!!
+	fn get_bg0_hofs(&self) -> u16 {
+		self.registers[BG0_HOFS_RANGE].view_bits::<Lsb0>()[0..=9].load_le()
+	}
+
+	fn get_bg0_vofs(&self) -> u16 {
+		self.registers[BG0_VOFS_RANGE].view_bits::<Lsb0>()[0..=9].load_le()
+	}
+
+	fn get_bg1_hofs(&self) -> u16 {
+		self.registers[BG1_HOFS_RANGE].view_bits::<Lsb0>()[0..=9].load_le()
+	}
+
+	fn get_bg1_vofs(&self) -> u16 {
+		self.registers[BG1_VOFS_RANGE].view_bits::<Lsb0>()[0..=9].load_le()
+	}
+
+	fn get_bg2_hofs(&self) -> u16 {
+		self.registers[BG2_HOFS_RANGE].view_bits::<Lsb0>()[0..=9].load_le()
+	}
+
+	fn get_bg2_vofs(&self) -> u16 {
+		self.registers[BG2_VOFS_RANGE].view_bits::<Lsb0>()[0..=9].load_le()
+	}
+
+	fn get_bg3_hofs(&self) -> u16 {
+		self.registers[BG3_HOFS_RANGE].view_bits::<Lsb0>()[0..=9].load_le()
+	}
+
+	fn get_bg3_vofs(&self) -> u16 {
+		self.registers[BG3_VOFS_RANGE].view_bits::<Lsb0>()[0..=9].load_le()
+	}
+
+	fn get_bg2_pa(&self) -> BgPixelIncrement {
+		BgPixelIncrement::new(self.registers[BG2_PA_RANGE].view_bits())
+	}
+
+	fn get_bg2_pb(&self) -> BgPixelIncrement {
+		BgPixelIncrement::new(self.registers[BG2_PB_RANGE].view_bits())
+	}
+
+	fn get_bg2_pc(&self) -> BgPixelIncrement {
+		BgPixelIncrement::new(self.registers[BG2_PC_RANGE].view_bits())
+	}
+
+	fn get_bg2_pd(&self) -> BgPixelIncrement {
+		BgPixelIncrement::new(self.registers[BG2_PD_RANGE].view_bits())
+	}
+
+	fn get_bg2_x(&self) -> BgTransform {
+		BgTransform::new(self.registers[BG2_X_RANGE].view_bits())
+	}
+
+	fn get_bg2_y(&self) -> BgTransform {
+		BgTransform::new(self.registers[BG2_Y_RANGE].view_bits())
+	}
+
+	fn get_bg3_pa(&self) -> BgPixelIncrement {
+		BgPixelIncrement::new(self.registers[BG3_PA_RANGE].view_bits())
+	}
+
+	fn get_bg3_pb(&self) -> BgPixelIncrement {
+		BgPixelIncrement::new(self.registers[BG3_PB_RANGE].view_bits())
+	}
+
+	fn get_bg3_pc(&self) -> BgPixelIncrement {
+		BgPixelIncrement::new(self.registers[BG3_PC_RANGE].view_bits())
+	}
+
+	fn get_bg3_pd(&self) -> BgPixelIncrement {
+		BgPixelIncrement::new(self.registers[BG3_PD_RANGE].view_bits())
+	}
+
+	fn get_bg3_x(&self) -> BgTransform {
+		BgTransform::new(self.registers[BG3_X_RANGE].view_bits())
+	}
+
+	fn get_bg3_y(&self) -> BgTransform {
+		BgTransform::new(self.registers[BG3_Y_RANGE].view_bits())
+	}
+
+	fn get_win0_dimensions(&self) -> WindowDimensions {
+		WindowDimensions::new(self.registers[WIN0_H_RANGE].view_bits(), self.registers[WIN0_V_RANGE].view_bits())
+	}
+
+	fn get_win1_dimensions(&self) -> WindowDimensions {
+		WindowDimensions::new(self.registers[WIN1_H_RANGE].view_bits(), self.registers[WIN1_V_RANGE].view_bits())
+	}
+
+	fn get_win_in(&self) -> WinIn {
+		WinIn::new(self.registers[WIN_IN_RANGE].view_bits())
+	}
+
+	fn get_win_out(&self) -> WinOut {
+		WinOut::new(self.registers[WIN_OUT_RANGE].view_bits())
+	}
+
+	fn get_mosaic(&self) -> Mosaic {
+		Mosaic::new(self.registers[MOSAIC_RANGE].view_bits())
+	}
+
+	fn get_blend_control(&self) -> BlendControl {
+		BlendControl::new(self.registers[BLD_CNT_RANGE].view_bits())
+	}
+
+	fn get_a_blend_alpha(&self) -> u8 {
+		self.registers[BLD_ALPHA_RANGE].view_bits::<Lsb0>()[0..=4].load_le()
+	}
+
+	fn get_b_blend_alpha(&self) -> u8 {
+		self.registers[BLD_ALPHA_RANGE].view_bits::<Lsb0>()[8..=12].load_le()
+	}
+
+	fn get_blend_brightness(&self) -> u8 {
+		self.registers[BLD_Y_RANGE].view_bits::<Lsb0>()[0..=4].load_le()
+	}
+
+	pub fn render(&mut self) -> Vec<u8> {
 		let mut pixels = vec![0; SCREEN_TOTAL_PIXELS * 3];
 		let video_mode = self.get_disp_cnt().get_bg_mode();
 		println!("Current video mode: {:?}", video_mode);
@@ -261,10 +407,10 @@ impl PPU {
 	}
 }
 
-struct DispCnt<'a>(&'a Gba8BitSlice);
+pub struct DispCnt<'a>(&'a mut Gba8BitSlice);
 
 impl<'a> DispCnt<'a> {
-	pub fn new(register: &'a Gba8BitSlice) -> Self {
+	pub fn new(register: &'a mut Gba8BitSlice) -> Self {
 		Self { 0: register }
 	}
 
@@ -321,10 +467,10 @@ impl<'a> DispCnt<'a> {
 	}
 }
 
-struct DispStat<'a>(&'a Gba8BitSlice);
+pub struct DispStat<'a>(&'a mut Gba8BitSlice);
 
 impl<'a> DispStat<'a> {
-	pub fn new(register: &'a Gba8BitSlice) -> Self {
+	pub fn new(register: &'a mut Gba8BitSlice) -> Self {
 		Self { 0: register }
 	}
 
@@ -332,8 +478,16 @@ impl<'a> DispStat<'a> {
 		self.0[0]
 	}
 
+	pub fn set_v_blank(&mut self, value: bool) {
+		self.0.set(0, value);
+	}
+
 	pub fn get_h_blank(&self) -> bool {
 		self.0[1]
+	}
+
+	pub fn set_h_blank(&mut self, value: bool) {
+		self.0.set(1, value);
 	}
 
 	pub fn get_v_counter(&self) -> bool {
@@ -640,158 +794,11 @@ impl<'a> BlendControl<'a> {
 	}
 }
 
-impl PPU {
-	fn get_disp_cnt(&self) -> DispCnt {
-		DispCnt::new(self.registers[DISP_CNT_RANGE].view_bits())
-	}
-
-	fn get_disp_stat(&self) -> DispStat {
-		DispStat::new(self.registers[DISP_STAT_RANGE].view_bits())
-	}
-
-	fn get_vcount(&self) -> u8 {
-		self.registers[VCOUNT_RANGE].view_bits::<Lsb0>()[0..8].load_le()
-	}
-
-	fn get_bg0_cnt(&self) -> BgCnt {
-		BgCnt::new(self.registers[BG0_CNT_RANGE].view_bits())
-	}
-
-	fn get_bg1_cnt(&self) -> BgCnt {
-		BgCnt::new(self.registers[BG1_CNT_RANGE].view_bits())
-	}
-
-	fn get_bg2_cnt(&self) -> BgCnt {
-		BgCnt::new(self.registers[BG2_CNT_RANGE].view_bits())
-	}
-
-	fn get_bg3_cnt(&self) -> BgCnt {
-		BgCnt::new(self.registers[BG3_CNT_RANGE].view_bits())
-	}
-
-	// FIXME: Check if 8 or 9!!!
-	fn get_bg0_hofs(&self) -> u16 {
-		self.registers[BG0_HOFS_RANGE].view_bits::<Lsb0>()[0..=9].load_le()
-	}
-
-	fn get_bg0_vofs(&self) -> u16 {
-		self.registers[BG0_VOFS_RANGE].view_bits::<Lsb0>()[0..=9].load_le()
-	}
-
-	fn get_bg1_hofs(&self) -> u16 {
-		self.registers[BG1_HOFS_RANGE].view_bits::<Lsb0>()[0..=9].load_le()
-	}
-
-	fn get_bg1_vofs(&self) -> u16 {
-		self.registers[BG1_VOFS_RANGE].view_bits::<Lsb0>()[0..=9].load_le()
-	}
-
-	fn get_bg2_hofs(&self) -> u16 {
-		self.registers[BG2_HOFS_RANGE].view_bits::<Lsb0>()[0..=9].load_le()
-	}
-
-	fn get_bg2_vofs(&self) -> u16 {
-		self.registers[BG2_VOFS_RANGE].view_bits::<Lsb0>()[0..=9].load_le()
-	}
-
-	fn get_bg3_hofs(&self) -> u16 {
-		self.registers[BG3_HOFS_RANGE].view_bits::<Lsb0>()[0..=9].load_le()
-	}
-
-	fn get_bg3_vofs(&self) -> u16 {
-		self.registers[BG3_VOFS_RANGE].view_bits::<Lsb0>()[0..=9].load_le()
-	}
-
-	fn get_bg2_pa(&self) -> BgPixelIncrement {
-		BgPixelIncrement::new(self.registers[BG2_PA_RANGE].view_bits())
-	}
-
-	fn get_bg2_pb(&self) -> BgPixelIncrement {
-		BgPixelIncrement::new(self.registers[BG2_PB_RANGE].view_bits())
-	}
-
-	fn get_bg2_pc(&self) -> BgPixelIncrement {
-		BgPixelIncrement::new(self.registers[BG2_PC_RANGE].view_bits())
-	}
-
-	fn get_bg2_pd(&self) -> BgPixelIncrement {
-		BgPixelIncrement::new(self.registers[BG2_PD_RANGE].view_bits())
-	}
-
-	fn get_bg2_x(&self) -> BgTransform {
-		BgTransform::new(self.registers[BG2_X_RANGE].view_bits())
-	}
-
-	fn get_bg2_y(&self) -> BgTransform {
-		BgTransform::new(self.registers[BG2_Y_RANGE].view_bits())
-	}
-
-	fn get_bg3_pa(&self) -> BgPixelIncrement {
-		BgPixelIncrement::new(self.registers[BG3_PA_RANGE].view_bits())
-	}
-
-	fn get_bg3_pb(&self) -> BgPixelIncrement {
-		BgPixelIncrement::new(self.registers[BG3_PB_RANGE].view_bits())
-	}
-
-	fn get_bg3_pc(&self) -> BgPixelIncrement {
-		BgPixelIncrement::new(self.registers[BG3_PC_RANGE].view_bits())
-	}
-
-	fn get_bg3_pd(&self) -> BgPixelIncrement {
-		BgPixelIncrement::new(self.registers[BG3_PD_RANGE].view_bits())
-	}
-
-	fn get_bg3_x(&self) -> BgTransform {
-		BgTransform::new(self.registers[BG3_X_RANGE].view_bits())
-	}
-
-	fn get_bg3_y(&self) -> BgTransform {
-		BgTransform::new(self.registers[BG3_Y_RANGE].view_bits())
-	}
-
-	fn get_win0_dimensions(&self) -> WindowDimensions {
-		WindowDimensions::new(self.registers[WIN0_H_RANGE].view_bits(), self.registers[WIN0_V_RANGE].view_bits())
-	}
-
-	fn get_win1_dimensions(&self) -> WindowDimensions {
-		WindowDimensions::new(self.registers[WIN1_H_RANGE].view_bits(), self.registers[WIN1_V_RANGE].view_bits())
-	}
-
-	fn get_win_in(&self) -> WinIn {
-		WinIn::new(self.registers[WIN_IN_RANGE].view_bits())
-	}
-
-	fn get_win_out(&self) -> WinOut {
-		WinOut::new(self.registers[WIN_OUT_RANGE].view_bits())
-	}
-
-	fn get_mosaic(&self) -> Mosaic {
-		Mosaic::new(self.registers[MOSAIC_RANGE].view_bits())
-	}
-
-	fn get_blend_control(&self) -> BlendControl {
-		BlendControl::new(self.registers[BLD_CNT_RANGE].view_bits())
-	}
-
-	fn get_a_blend_alpha(&self) -> u8 {
-		self.registers[BLD_ALPHA_RANGE].view_bits::<Lsb0>()[0..=4].load_le()
-	}
-
-	fn get_b_blend_alpha(&self) -> u8 {
-		self.registers[BLD_ALPHA_RANGE].view_bits::<Lsb0>()[8..=12].load_le()
-	}
-
-	fn get_blend_brightness(&self) -> u8 {
-		self.registers[BLD_Y_RANGE].view_bits::<Lsb0>()[0..=4].load_le()
-	}
-}
-
 impl MemoryInterface for PPU {
 	fn read_8(&self, address: u32) -> u8 {
 		match address & 0xff00_0000 {
 			crate::system::IO_ADDR => {
-				let addr = (address & 0x56) as usize;
+				let addr = (address & PPU_REGISTERS_END) as usize;
 				self.registers[addr]
 			}
 			PALETTE_RAM_ADDR => self.palette_ram[(address & 0x3ff) as usize],
@@ -804,7 +811,7 @@ impl MemoryInterface for PPU {
 	fn write_8(&mut self, address: u32, value: u8) {
 		match address & 0xff00_0000 {
 			crate::system::IO_ADDR => {
-				let addr = (address & 0x56) as usize;
+				let addr = (address & PPU_REGISTERS_END) as usize;
 				self.registers[addr] = value;
 			}
 			PALETTE_RAM_ADDR => self.palette_ram[(address & 0x3ff) as usize] = value,
@@ -818,7 +825,7 @@ impl MemoryInterface for PPU {
 		unsafe {
 			match address & 0xff00_0000 {
 				crate::system::IO_ADDR => {
-					let addr = (address & 0x56) as usize;
+					let addr = (address & PPU_REGISTERS_END) as usize;
 					*(self.registers.as_ptr().add(addr) as *mut u16) as u16
 				}
 				PALETTE_RAM_ADDR => *(self.palette_ram.as_ptr().add((address & 0x3ff) as usize) as *mut u16) as u16,
@@ -833,7 +840,7 @@ impl MemoryInterface for PPU {
 		unsafe {
 			match address & 0xff00_0000 {
 				crate::system::IO_ADDR => {
-					let addr = (address & 0x56) as usize;
+					let addr = (address & PPU_REGISTERS_END) as usize;
 					*(self.registers.as_ptr().add(addr) as *mut u16) = value;
 				}
 				PALETTE_RAM_ADDR => *(self.palette_ram.as_ptr().add((address & 0x3ff) as usize) as *mut u16) = value,
@@ -848,7 +855,7 @@ impl MemoryInterface for PPU {
 		unsafe {
 			match address & 0xff00_0000 {
 				crate::system::IO_ADDR => {
-					let addr = (address & 0x56) as usize;
+					let addr = (address & PPU_REGISTERS_END) as usize;
 					*(self.registers.as_ptr().add(addr) as *mut u32) as u32
 				}
 				PALETTE_RAM_ADDR => *(self.palette_ram.as_ptr().add((address & 0x3ff) as usize) as *mut u32) as u32,
@@ -863,7 +870,7 @@ impl MemoryInterface for PPU {
 		unsafe {
 			match address & 0xff00_0000 {
 				crate::system::IO_ADDR => {
-					let addr = (address & 0x56) as usize;
+					let addr = (address & PPU_REGISTERS_END) as usize;
 					*(self.registers.as_ptr().add(addr) as *mut u32) = value;
 				}
 				PALETTE_RAM_ADDR => *(self.palette_ram.as_ptr().add((address & 0x3ff) as usize) as *mut u32) = value,
