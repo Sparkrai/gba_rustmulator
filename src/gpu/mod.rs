@@ -59,6 +59,14 @@ pub enum EVideoMode {
 	Mode5,
 }
 
+#[derive(Debug, Copy, Clone, FromPrimitive, ToPrimitive)]
+pub enum EBlendMode {
+	None,
+	AlphaBlending,
+	Lighten,
+	Darken,
+}
+
 pub struct Color {
 	data: Gba16BitRegister,
 }
@@ -77,17 +85,20 @@ impl Color {
 	}
 }
 
-pub struct Size {
-	x: u16,
-	y: u16,
+pub struct WindowDimensions {
+	x: u8,
+	x2: u8,
+	y: u8,
+	y2: u8,
 }
 
-impl Size {
-	pub fn from_encoded_u16(encoded: u16) -> Self {
-		let bits = encoded.view_bits::<Lsb0>();
+impl WindowDimensions {
+	pub fn new(h: &Gba8BitSlice, v: &Gba8BitSlice) -> Self {
 		Self {
-			x: bits[0..8].load_le(),
-			y: bits[8..16].load_le(),
+			x: h[8..16].load_le(),
+			x2: h[0..8].load_le() - 1,
+			y: v[8..16].load_le(),
+			y2: v[0..8].load_le() - 1,
 		}
 	}
 }
@@ -361,6 +372,202 @@ impl<'a> BgTransform<'a> {
 	}
 }
 
+struct WinIn<'a>(&'a Gba8BitSlice);
+
+impl<'a> WinIn<'a> {
+	pub fn new(register: &'a Gba8BitSlice) -> Self {
+		Self { 0: register }
+	}
+
+	pub fn get_win0_bg0_enabled(&self) -> bool {
+		self.0[0]
+	}
+
+	pub fn get_win0_bg1_enabled(&self) -> bool {
+		self.0[1]
+	}
+
+	pub fn get_win0_bg2_enabled(&self) -> bool {
+		self.0[2]
+	}
+
+	pub fn get_win0_bg3_enabled(&self) -> bool {
+		self.0[3]
+	}
+
+	pub fn get_win0_obj_enabled(&self) -> bool {
+		self.0[4]
+	}
+
+	pub fn get_win0_blend_enabled(&self) -> bool {
+		self.0[5]
+	}
+
+	pub fn get_win1_bg0_enabled(&self) -> bool {
+		self.0[8]
+	}
+
+	pub fn get_win1_bg1_enabled(&self) -> bool {
+		self.0[9]
+	}
+
+	pub fn get_win1_bg2_enabled(&self) -> bool {
+		self.0[10]
+	}
+
+	pub fn get_win1_bg3_enabled(&self) -> bool {
+		self.0[11]
+	}
+
+	pub fn get_win1_obj_enabled(&self) -> bool {
+		self.0[12]
+	}
+
+	pub fn get_win1_blend_enabled(&self) -> bool {
+		self.0[13]
+	}
+}
+
+struct WinOut<'a>(&'a Gba8BitSlice);
+
+impl<'a> WinOut<'a> {
+	pub fn new(register: &'a Gba8BitSlice) -> Self {
+		Self { 0: register }
+	}
+
+	pub fn get_outside_bg0_enabled(&self) -> bool {
+		self.0[0]
+	}
+
+	pub fn get_outside_bg1_enabled(&self) -> bool {
+		self.0[1]
+	}
+
+	pub fn get_outside_bg2_enabled(&self) -> bool {
+		self.0[2]
+	}
+
+	pub fn get_outside_bg3_enabled(&self) -> bool {
+		self.0[3]
+	}
+
+	pub fn get_outside_obj_enabled(&self) -> bool {
+		self.0[4]
+	}
+
+	pub fn get_outside_blend_enabled(&self) -> bool {
+		self.0[5]
+	}
+
+	pub fn get_obj_win_bg0_enabled(&self) -> bool {
+		self.0[8]
+	}
+
+	pub fn get_obj_win_bg1_enabled(&self) -> bool {
+		self.0[9]
+	}
+
+	pub fn get_obj_win_bg2_enabled(&self) -> bool {
+		self.0[10]
+	}
+
+	pub fn get_obj_win_bg3_enabled(&self) -> bool {
+		self.0[11]
+	}
+
+	pub fn get_obj_win_obj_enabled(&self) -> bool {
+		self.0[12]
+	}
+
+	pub fn get_obj_win_blend_enabled(&self) -> bool {
+		self.0[13]
+	}
+}
+
+struct Mosaic<'a>(&'a Gba8BitSlice);
+
+impl<'a> Mosaic<'a> {
+	pub fn new(register: &'a Gba8BitSlice) -> Self {
+		Self { 0: register }
+	}
+
+	pub fn get_bg_x_size(&self) -> u8 {
+		self.0[0..4].view_bits().load_le()
+	}
+
+	pub fn get_bg_y_size(&self) -> u8 {
+		self.0[4..8].view_bits().load_le()
+	}
+
+	pub fn get_obj_x_size(&self) -> u8 {
+		self.0[8..12].view_bits().load_le()
+	}
+
+	pub fn get_obj_y_size(&self) -> u8 {
+		self.0[12..16].view_bits().load_le()
+	}
+}
+
+struct BlendControl<'a>(&'a Gba8BitSlice);
+
+impl<'a> BlendControl<'a> {
+	pub fn new(register: &'a Gba8BitSlice) -> Self {
+		Self { 0: register }
+	}
+
+	pub fn get_blend_bg0_source(&self) -> bool {
+		self.0[0]
+	}
+
+	pub fn get_blend_bg1_source(&self) -> bool {
+		self.0[1]
+	}
+
+	pub fn get_blend_bg2_source(&self) -> bool {
+		self.0[2]
+	}
+
+	pub fn get_blend_bg3_source(&self) -> bool {
+		self.0[3]
+	}
+
+	pub fn get_blend_obj_source(&self) -> bool {
+		self.0[4]
+	}
+
+	pub fn get_blend_backdrop_source(&self) -> bool {
+		self.0[5]
+	}
+
+	pub fn get_blend_mode(&self) -> EBlendMode {
+		FromPrimitive::from_u8(self.0[6..=7].view_bits().load_le()).unwrap()
+	}
+
+	pub fn get_blend_bg0_target(&self) -> bool {
+		self.0[8]
+	}
+
+	pub fn get_blend_bg1_target(&self) -> bool {
+		self.0[9]
+	}
+
+	pub fn get_blend_bg2_target(&self) -> bool {
+		self.0[10]
+	}
+
+	pub fn get_blend_bg3_target(&self) -> bool {
+		self.0[11]
+	}
+
+	pub fn get_blend_obj_target(&self) -> bool {
+		self.0[12]
+	}
+
+	pub fn get_blend_backdrop_target(&self) -> bool {
+		self.0[13]
+	}
+}
+
 impl GPU {
 	fn get_disp_cnt(&self) -> DispCnt {
 		DispCnt::new(self.registers[DISP_CNT_RANGE].view_bits())
@@ -471,44 +678,40 @@ impl GPU {
 		BgTransform::new(self.registers[BG3_Y_RANGE].view_bits())
 	}
 
-	fn get_win0_h(&self) -> &Gba8BitSlice {
-		&self.registers[WIN0_H_RANGE].view_bits()
+	fn get_win0_dimensions(&self) -> WindowDimensions {
+		WindowDimensions::new(self.registers[WIN0_H_RANGE].view_bits().load_le(), self.registers[WIN0_V_RANGE].view_bits().load_le())
 	}
 
-	fn get_win1_h(&self) -> &Gba8BitSlice {
-		&self.registers[WIN1_H_RANGE].view_bits()
+	fn get_win1_dimensions(&self) -> WindowDimensions {
+		WindowDimensions::new(self.registers[WIN1_H_RANGE].view_bits().load_le(), self.registers[WIN1_V_RANGE].view_bits().load_le())
 	}
 
-	fn get_win0_v(&self) -> &Gba8BitSlice {
-		&self.registers[WIN0_V_RANGE].view_bits()
+	fn get_win_in(&self) -> WinIn {
+		WinIn::new(self.registers[WIN_IN_RANGE].view_bits())
 	}
 
-	fn get_win1_v(&self) -> &Gba8BitSlice {
-		&self.registers[WIN1_V_RANGE].view_bits()
+	fn get_win_out(&self) -> WinOut {
+		WinOut::new(self.registers[WIN_OUT_RANGE].view_bits())
 	}
 
-	fn get_win_in(&self) -> &Gba8BitSlice {
-		&self.registers[WIN_IN_RANGE].view_bits()
+	fn get_mosaic(&self) -> Mosaic {
+		Mosaic::new(self.registers[MOSAIC_RANGE].view_bits())
 	}
 
-	fn get_win_out(&self) -> &Gba8BitSlice {
-		&self.registers[WIN_OUT_RANGE].view_bits()
+	fn get_blend_control(&self) -> BlendControl {
+		BlendControl::new(self.registers[BLD_CNT_RANGE].view_bits())
 	}
 
-	fn get_mosaic(&self) -> &Gba8BitSlice {
-		&self.registers[MOSAIC_RANGE].view_bits()
+	fn get_a_blend_alpha(&self) -> u8 {
+		self.registers[BLD_ALPHA_RANGE].view_bits()[0..=4].load_le()
 	}
 
-	fn get_bld_cnt(&self) -> &Gba8BitSlice {
-		&self.registers[BLD_CNT_RANGE].view_bits()
+	fn get_b_blend_alpha(&self) -> u8 {
+		self.registers[BLD_ALPHA_RANGE].view_bits()[8..=12].load_le()
 	}
 
-	fn get_bld_alpha(&self) -> &Gba8BitSlice {
-		&self.registers[BLD_ALPHA_RANGE].view_bits()
-	}
-
-	fn get_bld_y(&self) -> &Gba8BitSlice {
-		&self.registers[BLD_Y_RANGE].view_bits()
+	fn get_blend_brightness(&self) -> u8 {
+		self.registers[BLD_Y_RANGE].view_bits()[0..=4].load_le()
 	}
 }
 
