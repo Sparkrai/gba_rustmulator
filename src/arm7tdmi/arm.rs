@@ -192,7 +192,7 @@ pub fn operate_arm(cpu: &mut CPU, bus: &mut SystemBus, instruction: u32) {
 			if !r {
 				if cpu.get_operating_mode() != EOperatingMode::UserMode {
 					if (operand & STATE_MASK) != 0 {
-						panic!("UNPREDICTABLE!");
+						// NOTE: UNPREDICTABLE!
 					}
 					mask = byte_mask & (USER_MASK | PRIV_MASK);
 				} else {
@@ -201,11 +201,12 @@ pub fn operate_arm(cpu: &mut CPU, bus: &mut SystemBus, instruction: u32) {
 
 				psr = cpu.get_mut_cpsr();
 			} else {
+				mask = byte_mask & (USER_MASK | PRIV_MASK | STATE_MASK);
 				if cpu.get_operating_mode() != EOperatingMode::UserMode && cpu.get_operating_mode() != EOperatingMode::SystemMode {
-					mask = byte_mask & (USER_MASK | PRIV_MASK | STATE_MASK);
 					psr = cpu.get_mut_spsr(cpu.get_operating_mode());
 				} else {
-					panic!("UNPREDICTABLE!");
+					// NOTE: UNPREDICTABLE!
+					psr = cpu.get_mut_cpsr();
 				}
 			}
 
@@ -634,7 +635,7 @@ pub fn operate_arm(cpu: &mut CPU, bus: &mut SystemBus, instruction: u32) {
 						EShiftType::ROR => {
 							if shift == 0 {
 								shifter_operand = ((cpu.get_cpsr().get_c() as u32) << 31) | (rm >> 1);
-								shifter_carry_out = (rm & 0x0000_0001) > 0;
+								shifter_carry_out = (rm & 0x0000_0001) != 0;
 							} else {
 								shifter_operand = rm.rotate_right(shift);
 								shifter_carry_out = rm.view_bits::<Lsb0>()[(shift - 1) as usize];
@@ -656,7 +657,7 @@ pub fn operate_arm(cpu: &mut CPU, bus: &mut SystemBus, instruction: u32) {
 								let spsr = cpu.get_spsr(cpu.get_operating_mode()).get_value();
 								cpu.get_mut_cpsr().set_value(spsr);
 							} else {
-								panic!("UNPREDICTABLE!");
+								// NOTE: UNPREDICTABLE!
 							}
 						} else {
 							cpu.get_mut_cpsr().set_n((alu_out & 0x8000_0000) != 0);
@@ -676,7 +677,7 @@ pub fn operate_arm(cpu: &mut CPU, bus: &mut SystemBus, instruction: u32) {
 								let spsr = cpu.get_spsr(cpu.get_operating_mode()).get_value();
 								cpu.get_mut_cpsr().set_value(spsr);
 							} else {
-								panic!("UNPREDICTABLE!");
+								// NOTE: UNPREDICTABLE!
 							}
 						} else {
 							cpu.get_mut_cpsr().set_n((alu_out & 0x8000_0000) != 0);
@@ -697,11 +698,11 @@ pub fn operate_arm(cpu: &mut CPU, bus: &mut SystemBus, instruction: u32) {
 								let spsr = cpu.get_spsr(cpu.get_operating_mode()).get_value();
 								cpu.get_mut_cpsr().set_value(spsr);
 							} else {
-								panic!("UNPREDICTABLE!");
+								// NOTE: UNPREDICTABLE!
 							}
 						} else {
 							// Overflow is sign changes
-							let overflow = (rn as i32).is_positive() != (shifter_operand as i32).is_positive() && (rn as i32).is_positive() != (alu_out as i32).is_positive();
+							let overflow = rn.view_bits::<Lsb0>()[31] != shifter_operand.view_bits::<Lsb0>()[31] && rn.view_bits::<Lsb0>()[31] != alu_out.view_bits::<Lsb0>()[31];
 
 							cpu.get_mut_cpsr().set_n((alu_out & 0x8000_0000) != 0);
 							cpu.get_mut_cpsr().set_z(alu_out == 0);
@@ -722,12 +723,12 @@ pub fn operate_arm(cpu: &mut CPU, bus: &mut SystemBus, instruction: u32) {
 								let spsr = cpu.get_spsr(cpu.get_operating_mode()).get_value();
 								cpu.get_mut_cpsr().set_value(spsr);
 							} else {
-								panic!("UNPREDICTABLE!");
+								// NOTE: UNPREDICTABLE!
 							}
 						} else {
 							// Overflow if sign changes
 							let overflow =
-								(shifter_operand as i32).is_positive() != (rn as i32).is_positive() && (shifter_operand as i32).is_positive() != (alu_out as i32).is_positive();
+								shifter_operand.view_bits::<Lsb0>()[31] != rn.view_bits::<Lsb0>()[31] && shifter_operand.view_bits::<Lsb0>()[31] != alu_out.view_bits::<Lsb0>()[31];
 
 							cpu.get_mut_cpsr().set_n((alu_out & 0x8000_0000) != 0);
 							cpu.get_mut_cpsr().set_z(alu_out == 0);
@@ -748,11 +749,11 @@ pub fn operate_arm(cpu: &mut CPU, bus: &mut SystemBus, instruction: u32) {
 								let spsr = cpu.get_spsr(cpu.get_operating_mode()).get_value();
 								cpu.get_mut_cpsr().set_value(spsr);
 							} else {
-								panic!("UNPREDICTABLE!");
+								// NOTE: UNPREDICTABLE!
 							}
 						} else {
 							// Overflow if sign changes
-							let overflow = (rn as i32).is_positive() == (shifter_operand as i32).is_positive() && (rn as i32).is_positive() != (alu_out as i32).is_positive();
+							let overflow = rn.view_bits::<Lsb0>()[31] == shifter_operand.view_bits::<Lsb0>()[31] && rn.view_bits::<Lsb0>()[31] != alu_out.view_bits::<Lsb0>()[31];
 
 							cpu.get_mut_cpsr().set_n((alu_out & 0x8000_0000) != 0);
 							cpu.get_mut_cpsr().set_z(alu_out == 0);
@@ -776,13 +777,13 @@ pub fn operate_arm(cpu: &mut CPU, bus: &mut SystemBus, instruction: u32) {
 								let spsr = cpu.get_spsr(cpu.get_operating_mode()).get_value();
 								cpu.get_mut_cpsr().set_value(spsr);
 							} else {
-								panic!("UNPREDICTABLE!");
+								// NOTE: UNPREDICTABLE!
 							}
 						} else {
 							// Overflow if sign changes
-							let overflow = ((rn as i32).is_positive() == (shifter_operand as i32).is_positive()
-								&& (rn as i32).is_positive() != (alu_out_first as i32).is_positive())
-								|| ((alu_out_first as i32).is_positive() == (c as i32).is_positive() && (alu_out_first as i32).is_positive() != (alu_out as i32).is_positive());
+							let overflow = (rn.view_bits::<Lsb0>()[31] == shifter_operand.view_bits::<Lsb0>()[31]
+								&& rn.view_bits::<Lsb0>()[31] != alu_out_first.view_bits::<Lsb0>()[31])
+								|| (alu_out_first.view_bits::<Lsb0>()[31] && alu_out_first.view_bits::<Lsb0>()[31] != alu_out.view_bits::<Lsb0>()[31]);
 
 							cpu.get_mut_cpsr().set_n((alu_out & 0x8000_0000) != 0);
 							cpu.get_mut_cpsr().set_z(alu_out == 0);
@@ -806,13 +807,13 @@ pub fn operate_arm(cpu: &mut CPU, bus: &mut SystemBus, instruction: u32) {
 								let spsr = cpu.get_spsr(cpu.get_operating_mode()).get_value();
 								cpu.get_mut_cpsr().set_value(spsr);
 							} else {
-								panic!("UNPREDICTABLE!");
+								// NOTE: UNPREDICTABLE!
 							}
 						} else {
 							// Overflow if sign changes
-							let overflow = ((rn as i32).is_positive() != (shifter_operand as i32).is_positive()
-								&& (rn as i32).is_positive() != (alu_out_first as i32).is_positive())
-								|| ((alu_out_first as i32).is_positive() != (c as i32).is_positive() && (alu_out_first as i32).is_positive() != (alu_out as i32).is_positive());
+							let overflow = (rn.view_bits::<Lsb0>()[31] != shifter_operand.view_bits::<Lsb0>()[31]
+								&& rn.view_bits::<Lsb0>()[31] != alu_out_first.view_bits::<Lsb0>()[31])
+								|| (!alu_out_first.view_bits::<Lsb0>()[31] && alu_out_first.view_bits::<Lsb0>()[31] != alu_out.view_bits::<Lsb0>()[31]);
 
 							cpu.get_mut_cpsr().set_n((alu_out & 0x8000_0000) != 0);
 							cpu.get_mut_cpsr().set_z(alu_out == 0);
@@ -836,13 +837,13 @@ pub fn operate_arm(cpu: &mut CPU, bus: &mut SystemBus, instruction: u32) {
 								let spsr = cpu.get_spsr(cpu.get_operating_mode()).get_value();
 								cpu.get_mut_cpsr().set_value(spsr);
 							} else {
-								panic!("UNPREDICTABLE!");
+								// NOTE: UNPREDICTABLE!
 							}
 						} else {
 							// Overflow if sign changes
-							let overflow = ((shifter_operand as i32).is_positive() != (rn as i32).is_positive()
-								&& (shifter_operand as i32).is_positive() != (alu_out_first as i32).is_positive())
-								|| ((alu_out_first as i32).is_positive() != (c as i32).is_positive() && (alu_out_first as i32).is_positive() != (alu_out as i32).is_positive());
+							let overflow = (shifter_operand.view_bits::<Lsb0>()[31] != rn.view_bits::<Lsb0>()[31]
+								&& shifter_operand.view_bits::<Lsb0>()[31] != alu_out_first.view_bits::<Lsb0>()[31])
+								|| (!alu_out_first.view_bits::<Lsb0>()[31] && alu_out_first.view_bits::<Lsb0>()[31] != alu_out.view_bits::<Lsb0>()[31]);
 
 							cpu.get_mut_cpsr().set_n((alu_out & 0x8000_0000) != 0);
 							cpu.get_mut_cpsr().set_z(alu_out == 0);
@@ -872,7 +873,7 @@ pub fn operate_arm(cpu: &mut CPU, bus: &mut SystemBus, instruction: u32) {
 					// Borrowed if carries bits over
 					let (alu_out, borrowed) = rn.overflowing_sub(shifter_operand);
 					// Overflow is sign changes
-					let overflow = (rn as i32).is_positive() != (shifter_operand as i32).is_positive() && (rn as i32).is_positive() != (alu_out as i32).is_positive();
+					let overflow = rn.view_bits::<Lsb0>()[31] != shifter_operand.view_bits::<Lsb0>()[31] && rn.view_bits::<Lsb0>()[31] != alu_out.view_bits::<Lsb0>()[31];
 
 					cpu.get_mut_cpsr().set_n((alu_out & 0x8000_0000) != 0);
 					cpu.get_mut_cpsr().set_z(alu_out == 0);
@@ -884,7 +885,7 @@ pub fn operate_arm(cpu: &mut CPU, bus: &mut SystemBus, instruction: u32) {
 					// Borrowed if carries bits over
 					let (alu_out, borrowed) = rn.overflowing_add(shifter_operand);
 					// Overflow is sign changes
-					let overflow = (rn as i32).is_positive() == (shifter_operand as i32).is_positive() && (rn as i32).is_positive() != (alu_out as i32).is_positive();
+					let overflow = rn.view_bits::<Lsb0>()[31] == shifter_operand.view_bits::<Lsb0>()[31] && rn.view_bits::<Lsb0>()[31] != alu_out.view_bits::<Lsb0>()[31];
 
 					cpu.get_mut_cpsr().set_n((alu_out & 0x8000_0000) != 0);
 					cpu.get_mut_cpsr().set_z(alu_out == 0);
@@ -893,7 +894,8 @@ pub fn operate_arm(cpu: &mut CPU, bus: &mut SystemBus, instruction: u32) {
 				}
 				// ORR
 				0xc => {
-					cpu.set_register_value(rd_index, rn | shifter_operand);
+					let alu_out = rn | shifter_operand;
+					cpu.set_register_value(rd_index, alu_out);
 
 					if s {
 						if rd_index == PROGRAM_COUNTER_REGISTER {
@@ -901,12 +903,11 @@ pub fn operate_arm(cpu: &mut CPU, bus: &mut SystemBus, instruction: u32) {
 								let spsr = cpu.get_spsr(cpu.get_operating_mode()).get_value();
 								cpu.get_mut_cpsr().set_value(spsr);
 							} else {
-								panic!("UNPREDICTABLE!");
+								// NOTE: UNPREDICTABLE!
 							}
 						} else {
-							let rd = cpu.get_register_value(rd_index);
-							cpu.get_mut_cpsr().set_n((rd & 0x8000_0000) != 0);
-							cpu.get_mut_cpsr().set_z(rd == 0);
+							cpu.get_mut_cpsr().set_n((alu_out & 0x8000_0000) != 0);
+							cpu.get_mut_cpsr().set_z(alu_out == 0);
 							cpu.get_mut_cpsr().set_c(shifter_carry_out);
 						}
 					}
@@ -915,14 +916,14 @@ pub fn operate_arm(cpu: &mut CPU, bus: &mut SystemBus, instruction: u32) {
 				0xd => {
 					cpu.set_register_value(rd_index, shifter_operand);
 
-					let rd = cpu.get_register_value(rd_index);
 					if s && rd_index == PROGRAM_COUNTER_REGISTER {
 						if cpu.get_operating_mode() != EOperatingMode::UserMode && cpu.get_operating_mode() != EOperatingMode::SystemMode {
-							*cpu.get_mut_cpsr() = cpu.get_spsr(cpu.get_operating_mode()).clone();
+							let spsr = cpu.get_spsr(cpu.get_operating_mode()).get_value();
+							cpu.get_mut_cpsr().set_value(spsr);
 						}
 					} else if s {
-						cpu.get_mut_cpsr().set_n((rd & 0x8000_0000) != 0);
-						cpu.get_mut_cpsr().set_z(rd == 0);
+						cpu.get_mut_cpsr().set_n((shifter_operand & 0x8000_0000) != 0);
+						cpu.get_mut_cpsr().set_z(shifter_operand == 0);
 						cpu.get_mut_cpsr().set_c(shifter_carry_out);
 					}
 				}
@@ -937,7 +938,7 @@ pub fn operate_arm(cpu: &mut CPU, bus: &mut SystemBus, instruction: u32) {
 								let spsr = cpu.get_spsr(cpu.get_operating_mode()).get_value();
 								cpu.get_mut_cpsr().set_value(spsr);
 							} else {
-								panic!("UNPREDICTABLE!");
+								// NOTE: UNPREDICTABLE!
 							}
 						} else {
 							cpu.get_mut_cpsr().set_n((alu_out & 0x8000_0000) != 0);
@@ -957,7 +958,7 @@ pub fn operate_arm(cpu: &mut CPU, bus: &mut SystemBus, instruction: u32) {
 								let spsr = cpu.get_spsr(cpu.get_operating_mode()).get_value();
 								cpu.get_mut_cpsr().set_value(spsr);
 							} else {
-								panic!("UNPREDICTABLE!");
+								// NOTE: UNPREDICTABLE!
 							}
 						} else {
 							cpu.get_mut_cpsr().set_n((alu_out & 0x8000_0000) != 0);

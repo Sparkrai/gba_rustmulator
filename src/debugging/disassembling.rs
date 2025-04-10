@@ -281,7 +281,7 @@ pub fn disassemble_arm(instruction: u32) -> String {
 			0x5 => op = "UMLAL",
 			0x6 => op = "SMULL",
 			0x7 => op = "SMLAL",
-			_ => panic!("ERROR!!!"),
+			_ => op = "ERROR",
 		}
 
 		// TODO: Revisit params!!!

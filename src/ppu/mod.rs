@@ -145,9 +145,9 @@ impl<'a> SpriteEntry<'a> {
 	}
 
 	pub fn get_y_coord(&self) -> i32 {
-		let y = self.0[0..8].load_le::<u8>() as i8 as i32;
+		let y = self.0[0..8].load_le::<u8>() as i32;
 		// NOTE: Check if it's wrapping!!!
-		if y >= (160 as i32) {
+		if y >= (160) {
 			y - (1 << 8)
 		} else {
 			y
@@ -522,16 +522,8 @@ impl PPU {
 							let pixel_x0 = (width / 2) as i32;
 							let pixel_y0 = (height / 2) as i32;
 
-							let half_width = if sprite.get_is_affine() && sprite.get_is_virtual_double_sized() {
-								width as i32
-							} else {
-								pixel_x0
-							};
-							let half_height = if sprite.get_is_affine() && sprite.get_is_virtual_double_sized() {
-								height as i32
-							} else {
-								pixel_y0
-							};
+							let half_width = if sprite.get_is_virtual_double_sized() { width as i32 } else { pixel_x0 };
+							let half_height = if sprite.get_is_virtual_double_sized() { height as i32 } else { pixel_y0 };
 
 							for y in -half_height..half_height {
 								for x in -half_width..half_width {

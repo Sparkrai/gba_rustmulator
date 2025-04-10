@@ -37,7 +37,7 @@ fn main() {
 	File::open("data/bios.gba").expect("Bios couldn't be opened!").read_to_end(&mut bios_data).unwrap();
 
 	let mut cartridge_data = Vec::<u8>::new();
-	if File::open("data/demos/hello.gba")
+	if File::open("data/tests/arm_2.gba")
 		.expect("Cartridge couldn't be opened!")
 		.read_to_end(&mut cartridge_data)
 		.is_ok()
@@ -45,8 +45,8 @@ fn main() {
 		if cartridge_data.len() < CARTRIDGE_ROM_SIZE {
 			cartridge_data.resize(CARTRIDGE_ROM_SIZE - cartridge_data.len(), 0);
 		}
-		//		let mut bus = SystemBus::new_with_cartridge(bios_data.into_boxed_slice(), cartridge_data.into_boxed_slice());
-		let mut bus = SystemBus::new(bios_data.into_boxed_slice());
+		let mut bus = SystemBus::new_with_cartridge(bios_data.into_boxed_slice(), cartridge_data.into_boxed_slice());
+		//		let mut bus = SystemBus::new(bios_data.into_boxed_slice());
 
 		let mut show_cpu_debug_window = true;
 		let mut show_memory_debug_window = true;
