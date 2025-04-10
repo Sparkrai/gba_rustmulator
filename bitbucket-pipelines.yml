@@ -8,5 +8,5 @@ pipelines:
   default:
     - step:
         script: # Modify the commands below to build your repository.
-          - cargo build -release -v
+          - cargo build --release -v
           - cargo test -v
