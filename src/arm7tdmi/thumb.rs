@@ -367,7 +367,7 @@ pub fn operate_thumb(instruction: u16, cpu: &mut CPU, bus: &mut SystemBus) {
 			}
 			// MUL
 			0xd => {
-				let alu_out = rm * rd;
+				let alu_out = rm.wrapping_mul(rd);
 				cpu.set_register_value(rd_index, alu_out);
 
 				cpu.get_mut_cpsr().set_n((alu_out & 0x8000_0000) != 0);
@@ -478,7 +478,7 @@ pub fn operate_thumb(instruction: u16, cpu: &mut CPU, bus: &mut SystemBus) {
 		if op == 0 {
 			let rd = cpu.get_register_value(rd_index);
 			// NOTE: Forced alignment! (UNPREDICTABLE)
-			bus.write_16(address - 1, rd as u16);
+			bus.write_16(address & !0x1, rd as u16);
 		} else {
 			let data;
 			match op {
@@ -492,7 +492,7 @@ pub fn operate_thumb(instruction: u16, cpu: &mut CPU, bus: &mut SystemBus) {
 						data = bus.read_16(address) as u32;
 					} else {
 						// NOTE: Forced alignment and rotation of data! (UNPREDICTABLE)
-						data = bus.read_16(address - 1).rotate_right(8) as u32;
+						data = bus.read_16(address & !0x1).rotate_right(8) as u32;
 					}
 				}
 				// LDSH
@@ -518,7 +518,8 @@ pub fn operate_thumb(instruction: u16, cpu: &mut CPU, bus: &mut SystemBus) {
 		let rn = cpu.get_register_value(((0x0038 & instruction) >> 3) as u8);
 		let rd_index = (0x0007 & instruction) as u8;
 
-		let address = rn.wrapping_add(offset);
+		let address = if b { rn.wrapping_add(offset) } else { rn.wrapping_add(offset * 4) };
+
 		if l {
 			let data;
 			if b {
@@ -645,7 +646,7 @@ pub fn operate_thumb(instruction: u16, cpu: &mut CPU, bus: &mut SystemBus) {
 			cpu.set_register_value(STACK_POINTER_REGISTER, end_address);
 		} else {
 			// NOTE: Forced alignment!
-			let start_address = sp.wrapping_sub(4 * (r as u32 + reg_list.count_ones() as u32)) & !0x3;
+			let start_address = sp.wrapping_sub(4 * (r as u32 + reg_list.count_ones() as u32));
 			let end_address = sp.wrapping_sub(4);
 			let mut address = start_address;
 			for i in 0..8 {
@@ -712,6 +713,7 @@ pub fn operate_thumb(instruction: u16, cpu: &mut CPU, bus: &mut SystemBus) {
 	} else if (0xff00 & instruction) == 0xdf00 {
 		// SWI Software Interrupt Exception
 		cpu.exception(EExceptionType::SoftwareInterrupt);
+		return;
 	} else if (0xf000 & instruction) == 0xd000 {
 		// Conditional Branch
 		let cond = ((0x0f00 & instruction) >> 8) as u8;
@@ -749,6 +751,4 @@ pub fn operate_thumb(instruction: u16, cpu: &mut CPU, bus: &mut SystemBus) {
 			return;
 		}
 	}
-
-	cpu.set_register_value(PROGRAM_COUNTER_REGISTER, cpu.get_current_pc().wrapping_add(2));
 }

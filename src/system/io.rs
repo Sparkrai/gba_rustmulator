@@ -9,6 +9,7 @@ pub const SOUNDBIAS_RANGE: Range<usize> = 0x88..0x8c;
 pub const IE_RANGE: Range<usize> = 0x200..0x202;
 pub const IF_RANGE: Range<usize> = 0x202..0x204;
 pub const IME_RANGE: Range<usize> = 0x208..0x20a;
+pub const HALTCNT_ADDRESS: usize = 0x301;
 
 /// Interrupt Enable Register (R/W)
 pub struct IE<'a>(&'a Gba8BitSlice);
@@ -220,12 +221,14 @@ impl<'a> SoundBias<'a> {
 /// Represents the hardware registers mapped to memory
 pub struct IORegisters {
 	registers: Box<[u8]>,
+	pub halted: bool,
 }
 
 impl IORegisters {
 	pub fn new() -> Self {
 		let mut result = Self {
 			registers: vec![0; IO_REGISTERS_END as usize].into_boxed_slice(),
+			halted: false,
 		};
 		result.get_sound_bias().set_bias_level(0x100);
 
@@ -247,6 +250,10 @@ impl IORegisters {
 	pub fn get_ime(&self) -> bool {
 		self.registers[IME_RANGE].view_bits::<Lsb0>()[0]
 	}
+
+	pub fn get_is_stop(&self) -> bool {
+		self.registers[HALTCNT_ADDRESS].view_bits::<Lsb0>()[7]
+	}
 }
 
 impl MemoryInterface for IORegisters {
@@ -263,25 +270,33 @@ impl MemoryInterface for IORegisters {
 		let addr = if address & 0xffff == 0x8000 { 0x800 } else { address & 0x00ff_ffff };
 		if addr <= IO_REGISTERS_END {
 			self.registers[addr as usize] = value;
+
+			if addr == HALTCNT_ADDRESS as u32 {
+				self.halted = true;
+			}
 		}
 	}
 
 	fn read_16(&self, address: u32) -> u16 {
-		unsafe {
-			let addr = if address & 0xffff == 0x8000 { 0x800 } else { address & 0x00ff_ffff };
-			if addr <= IO_REGISTERS_END {
+		let addr = if address & 0xffff == 0x8000 { 0x800 } else { address & 0x00ff_ffff };
+		if addr <= IO_REGISTERS_END {
+			unsafe {
 				return *(self.registers.as_ptr().add(addr as usize) as *mut u16) as u16;
 			}
-
-			0x0 // TODO: Return proper invalid value
 		}
+
+		0x0 // TODO: Return proper invalid value
 	}
 
 	fn write_16(&mut self, address: u32, value: u16) {
-		unsafe {
-			let addr = if address & 0xffff == 0x8000 { 0x800 } else { address & 0x00ff_ffff };
-			if addr <= IO_REGISTERS_END {
+		let addr = if address & 0xffff == 0x8000 { 0x800 } else { address & 0x00ff_ffff };
+		if addr <= IO_REGISTERS_END {
+			unsafe {
 				*(self.registers.as_ptr().add(addr as usize) as *mut u16) = value;
+			}
+
+			if addr == HALTCNT_ADDRESS as u32 || addr + 1 == HALTCNT_ADDRESS as u32 {
+				self.halted = true;
 			}
 		}
 	}
@@ -298,10 +313,14 @@ impl MemoryInterface for IORegisters {
 	}
 
 	fn write_32(&mut self, address: u32, value: u32) {
-		unsafe {
-			let addr = if address & 0xffff == 0x8000 { 0x800 } else { address & 0x00ff_ffff };
-			if addr <= IO_REGISTERS_END {
+		let addr = if address & 0xffff == 0x8000 { 0x800 } else { address & 0x00ff_ffff };
+		if addr <= IO_REGISTERS_END {
+			unsafe {
 				*(self.registers.as_ptr().add(addr as usize) as *mut u32) = value;
+			}
+
+			if HALTCNT_ADDRESS as u32 <= addr && addr + 3 >= HALTCNT_ADDRESS as u32 {
+				self.halted = true;
 			}
 		}
 	}

@@ -4,7 +4,7 @@ use bitvec::prelude::BitSlice;
 use num_derive::*;
 use num_traits::{AsPrimitive, PrimInt};
 
-use crate::arm7tdmi::cpu::CPU;
+use crate::arm7tdmi::cpu::{CPU, PROGRAM_COUNTER_REGISTER};
 use crate::system::{MemoryInterface, SystemBus};
 
 mod arm;
@@ -81,8 +81,16 @@ pub fn decode(cpu: &mut CPU, bus: &mut SystemBus) {
 	if cpu.get_cpsr().get_t() {
 		let instruction = bus.read_16(pc);
 		thumb::operate_thumb(instruction, cpu, bus);
+
+		if cpu.get_current_pc() == pc {
+			cpu.set_register_value(PROGRAM_COUNTER_REGISTER, cpu.get_current_pc() + 2);
+		}
 	} else {
 		let instruction = bus.read_32(pc);
 		arm::operate_arm(cpu, bus, instruction);
+
+		if cpu.get_current_pc() == pc {
+			cpu.set_register_value(PROGRAM_COUNTER_REGISTER, cpu.get_current_pc() + 4);
+		}
 	}
 }

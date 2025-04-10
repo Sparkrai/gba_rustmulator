@@ -9,7 +9,7 @@ use system::*;
 
 use crate::debugging::disassembling::disassemble_instruction;
 use crate::debugging::{build_cpu_debug_window, build_io_registers_window, build_memory_debug_window, build_tiles_debug_window};
-use crate::ppu::{Color, PALETTE_RAM_SIZE, VRAM_SIZE};
+use crate::ppu::{Color, EVideoMode, PALETTE_RAM_SIZE, VRAM_SIZE};
 use crate::windowing::System;
 use glium::glutin::event::{Event, WindowEvent};
 use glium::glutin::event_loop::ControlFlow;
@@ -76,8 +76,9 @@ fn main() {
 			match event {
 				Event::NewEvents(_) => {
 					// Lock FPS
-					if last_frame.elapsed() < target_frame_duration {
-						spin_sleep::sleep(target_frame_duration - last_frame.elapsed());
+					let elapsed_time = last_frame.elapsed();
+					if elapsed_time < target_frame_duration {
+						spin_sleep::sleep(target_frame_duration - elapsed_time);
 					}
 					let duration_elapsed_for_frame = last_frame.elapsed();
 
@@ -99,46 +100,73 @@ fn main() {
 
 							arm7tdmi::decode(&mut cpu, &mut bus);
 						} else {
+							// NOTE: Reset H/V blank
+							bus.ppu.get_disp_stat().set_h_blank(false);
+							bus.ppu.get_disp_stat().set_v_blank(false);
 							for _ in 0..=CYCLES_PER_FRAME {
 								current_cycle = (current_cycle + 1) % CYCLES_PER_FRAME;
 								bus.ppu.set_vcount((current_cycle / 1232) as u8);
 
-								if bus.io_regs.get_ime() {
-									// H-Blank Interrupt
-									if bus.io_regs.get_ie().get_h_blank() && bus.ppu.get_disp_stat().get_h_blank_irq() && (current_cycle.wrapping_sub(960) % 1232 == 0) {
+								// TODO: Check interrupts!!!
+								if bus.ppu.get_vcount() == bus.ppu.get_disp_stat().get_v_count_trigger() {
+									bus.ppu.get_disp_stat().set_v_counter_flag(true);
+
+									if bus.io_regs.get_ime() && bus.io_regs.get_ie().get_v_counter_match() && bus.ppu.get_disp_stat().get_v_counter_irq() {
+										bus.io_regs.get_if().set_v_counter_match(true);
+										cpu.exception(crate::arm7tdmi::EExceptionType::Irq);
+										bus.io_regs.halted = false;
+									}
+								} else {
+									bus.ppu.get_disp_stat().set_v_counter_flag(false);
+								}
+
+								// H-Blank
+								if current_cycle.wrapping_sub(960) % 1232 == 0 {
+									bus.ppu.get_disp_stat().set_h_blank(true);
+
+									if bus.io_regs.get_ime() && bus.io_regs.get_ie().get_h_blank() && bus.ppu.get_disp_stat().get_h_blank_irq() {
 										bus.io_regs.get_if().set_h_blank(true);
-										//										bus.ppu.get_disp_stat().set_h_blank(true);
 										cpu.exception(crate::arm7tdmi::EExceptionType::Irq);
-									} else if bus.io_regs.get_ie().get_v_blank() && bus.ppu.get_disp_stat().get_v_blank_irq() && current_cycle == 197120 {
-										// V-Blank Interrupt
+										bus.io_regs.halted = false;
+									}
+								} else if current_cycle == 197120 {
+									// V-Blank
+									bus.ppu.get_disp_stat().set_v_blank(true);
+
+									if bus.io_regs.get_ime() && bus.io_regs.get_ie().get_v_blank() && bus.ppu.get_disp_stat().get_v_blank_irq() {
 										bus.io_regs.get_if().set_v_blank(true);
-										//										bus.ppu.get_disp_stat().set_v_blank(true);
 										cpu.exception(crate::arm7tdmi::EExceptionType::Irq);
+										bus.io_regs.halted = false;
 									}
+								} else if current_cycle % 1232 == 0 {
+									// H-Blank end
+									bus.ppu.get_disp_stat().set_h_blank(false);
 								}
 
-								if write_flow_to_file {
-									writeln!(&mut flow, "{:#X}: {}", cpu.get_current_pc(), disassemble_instruction(&cpu, &bus)).unwrap();
-								}
-
-								arm7tdmi::decode(&mut cpu, &mut bus);
-
-								// NOTE: Breakpoint
-								if breakpoint_set && cpu.get_current_pc() == breakpoint_address {
-									debug_mode = true;
-
-									// Write flow to file
+								if !bus.io_regs.halted {
 									if write_flow_to_file {
-										let mut flow_file = OpenOptions::new()
-											.append(true)
-											.create(true)
-											.open("C:\\Users\\gbAgostPa\\Downloads\\Tests\\BIOS_Flow.txt")
-											.unwrap();
-										flow_file.write_all(&flow).unwrap();
-										flow.clear();
+										writeln!(&mut flow, "{:#X}: {}", cpu.get_current_pc(), disassemble_instruction(&cpu, &bus)).unwrap();
 									}
 
-									break;
+									arm7tdmi::decode(&mut cpu, &mut bus);
+
+									// NOTE: Breakpoint
+									if breakpoint_set && cpu.get_current_pc() == breakpoint_address {
+										debug_mode = true;
+
+										// Write flow to file
+										if write_flow_to_file {
+											let mut flow_file = OpenOptions::new()
+												.append(true)
+												.create(true)
+												.open("C:\\Users\\gbAgostPa\\Downloads\\Tests\\BIOS_Flow.txt")
+												.unwrap();
+											flow_file.write_all(&flow).unwrap();
+											flow.clear();
+										}
+
+										break;
+									}
 								}
 							}
 						}
@@ -221,9 +249,18 @@ fn main() {
 					}
 
 					if show_tiles_window {
+						let obj_tiles_start = match bus.ppu.get_disp_cnt().get_bg_mode() {
+							EVideoMode::Mode0 | EVideoMode::Mode1 | EVideoMode::Mode2 => 0x10000,
+							EVideoMode::Mode3 | EVideoMode::Mode4 | EVideoMode::Mode5 => 0x14000,
+						};
+
 						let mut pixels = vec![0u8; VRAM_SIZE * 3];
 						for i in 0..VRAM_SIZE as u32 {
-							let palette_color_index = bus.ppu.read_8(VRAM_ADDR + i) as u32;
+							let palette_color_index = if i >= obj_tiles_start {
+								bus.ppu.read_8(VRAM_ADDR + i) as u32 + 256u32
+							} else {
+								bus.ppu.read_8(VRAM_ADDR + i) as u32
+							};
 							// One color every 2 bytes
 							let color = Color::new(bus.ppu.read_16(PALETTE_RAM_ADDR + (palette_color_index * 2)));
 

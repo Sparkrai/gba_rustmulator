@@ -71,6 +71,13 @@ pub enum EBlendMode {
 	Darken,
 }
 
+#[derive(Debug, Copy, Clone, FromPrimitive, ToPrimitive)]
+pub enum ESpriteMode {
+	Normal,
+	SemiTransparent,
+	ObjWindow,
+}
+
 pub struct Color {
 	red: u8,
 	green: u8,
@@ -118,6 +125,90 @@ impl WindowDimensions {
 			y: v[8..16].load_le::<u8>(),
 			y2: v[0..8].load_le::<u8>() - 1,
 		}
+	}
+}
+
+pub struct SpriteEntry<'a>(&'a Gba8BitSlice);
+
+impl<'a> SpriteEntry<'a> {
+	pub fn new(registers: &'a Gba8BitSlice) -> Self {
+		Self { 0: registers }
+	}
+
+	pub fn get_y_coord(&self) -> u16 {
+		self.0[0..8].load_le()
+	}
+
+	pub fn get_is_affine(&self) -> bool {
+		self.0[8]
+	}
+
+	pub fn get_is_virtual_double_sized(&self) -> bool {
+		self.0[9]
+	}
+
+	pub fn get_sprite_mode(&self) -> ESpriteMode {
+		FromPrimitive::from_u8(self.0[0xa..0xb].load_le()).unwrap()
+	}
+
+	pub fn get_is_mosaic(&self) -> bool {
+		self.0[0xc]
+	}
+
+	pub fn get_is_256_palette(&self) -> bool {
+		self.0[0xd]
+	}
+
+	pub fn get_size(&self) -> (u8, u8) {
+		let value = self.0[0xe..0xf].load_le::<u8>() << 2 | self.0[0x1e..0x1f].load_le::<u8>();
+
+		match value {
+			0b0000 => (8, 8),
+			0b0001 => (16, 16),
+			0b0010 => (32, 32),
+			0b0011 => (64, 64),
+			0b0100 => (16, 8),
+			0b0101 => (32, 8),
+			0b0110 => (64, 16),
+			0b0111 => (64, 32),
+			0b1000 => (8, 16),
+			0b1001 => (8, 32),
+			0b1010 => (16, 32),
+			0b1011 => (32, 64),
+			_ => panic!("UNRECOGNIZED!"),
+		}
+	}
+
+	pub fn get_x_coord(&self) -> u16 {
+		self.0[0x10..0x19].load_le()
+	}
+
+	pub fn get_rotation_data_index(&self) -> u8 {
+		self.0[0x19..0x1d].load_le()
+	}
+
+	pub fn get_h_flip(&self) -> bool {
+		self.0[0x1c]
+	}
+
+	pub fn get_v_flip(&self) -> bool {
+		self.0[0x1d]
+	}
+
+	pub fn get_tile_index(&self) -> u16 {
+		self.0[0x20..0x2a].load_le()
+	}
+
+	pub fn get_priority(&self) -> u8 {
+		self.0[0x2a..0x2b].load_le()
+	}
+
+	pub fn get_palette_number(&self) -> u8 {
+		self.0[0x2c..=0x2f].load_le()
+	}
+
+	pub fn get_transform(&self) -> BgTransformFloat {
+		BgTransformFloat::new(&self.0[0x2c..=0x2f])
 	}
 }
 
@@ -297,12 +388,12 @@ impl PPU {
 		BgPixelIncrement::new(self.registers[BG2_PD_RANGE].view_bits())
 	}
 
-	fn get_bg2_x(&self) -> BgTransform {
-		BgTransform::new(self.registers[BG2_X_RANGE].view_bits())
+	fn get_bg2_x(&self) -> BgTransformFloat {
+		BgTransformFloat::new(self.registers[BG2_X_RANGE].view_bits())
 	}
 
-	fn get_bg2_y(&self) -> BgTransform {
-		BgTransform::new(self.registers[BG2_Y_RANGE].view_bits())
+	fn get_bg2_y(&self) -> BgTransformFloat {
+		BgTransformFloat::new(self.registers[BG2_Y_RANGE].view_bits())
 	}
 
 	fn get_bg3_pa(&self) -> BgPixelIncrement {
@@ -321,12 +412,12 @@ impl PPU {
 		BgPixelIncrement::new(self.registers[BG3_PD_RANGE].view_bits())
 	}
 
-	fn get_bg3_x(&self) -> BgTransform {
-		BgTransform::new(self.registers[BG3_X_RANGE].view_bits())
+	fn get_bg3_x(&self) -> BgTransformFloat {
+		BgTransformFloat::new(self.registers[BG3_X_RANGE].view_bits())
 	}
 
-	fn get_bg3_y(&self) -> BgTransform {
-		BgTransform::new(self.registers[BG3_Y_RANGE].view_bits())
+	fn get_bg3_y(&self) -> BgTransformFloat {
+		BgTransformFloat::new(self.registers[BG3_Y_RANGE].view_bits())
 	}
 
 	fn get_win0_dimensions(&self) -> WindowDimensions {
@@ -366,47 +457,53 @@ impl PPU {
 	}
 
 	pub fn render(&mut self) -> Vec<u8> {
-		let mut pixels = vec![0; SCREEN_TOTAL_PIXELS * 3];
-		let video_mode = self.get_disp_cnt().get_bg_mode();
+		let mut pixels = vec![u8::max_value(); SCREEN_TOTAL_PIXELS * 3];
+		if !self.get_disp_cnt().get_forced_blank() {
+			let video_mode = self.get_disp_cnt().get_bg_mode();
 
-		match video_mode {
-			EVideoMode::Mode0 => {}
-			EVideoMode::Mode1 => {}
-			EVideoMode::Mode2 => {
-				let bg3_cnt = self.get_bg3_cnt();
-				let bg3_wraparound = bg3_cnt.get_overflow_wraparound();
-				let bg3_tile_size = match bg3_cnt.get_size() {
-					0x0 => 16,
-					0x1 => 32,
-					0x2 => 64,
-					0x3 => 128,
-					_ => {
-						panic!("IMPOSSIBLE!")
-					}
-				};
+			match video_mode {
+				EVideoMode::Mode0 => {}
+				EVideoMode::Mode1 => {}
+				EVideoMode::Mode2 => {
+					let bg3_cnt = self.get_bg3_cnt();
+					let bg3_wraparound = bg3_cnt.get_overflow_wraparound();
+					let bg3_tiles = match bg3_cnt.get_size() {
+						0x0 => 16,
+						0x1 => 32,
+						0x2 => 64,
+						0x3 => 128,
+						_ => {
+							panic!("IMPOSSIBLE!")
+						}
+					};
 
-				let bg3_x = self.get_bg3_x().get_value();
-				let bg3_y = self.get_bg3_y().get_value();
+					let bg3_x = self.get_bg3_x().get_value();
+					let bg3_y = self.get_bg3_y().get_value();
 
-				for x in 0..240 {
-					for y in 0..160 {
-						let pixel = (bg3_x as usize + x) * bg3_tile_size + bg3_y as usize + y;
-						let tile = pixel / 8;
-						let tile_number = self.vram[bg3_cnt.get_map_data_address() + tile] as usize;
+					let sprites = self.oam.chunks_exact(8).map(|x| SpriteEntry::new(x.view_bits()));
 
-						let palette_color_index = (self.vram[bg3_cnt.get_tile_data_address() + (tile_number * 64) + (pixel % 8)] * 2) as usize;
-						let color = Color::new(((self.palette_ram[palette_color_index + 1] as u16) << 8 | self.palette_ram[palette_color_index] as u16));
+					// TODO: Use spries!!!
+					for x in 0..240 {
+						for y in 0..160 {
+							// TODO: Use transform!!!
+							let pixel_offset = (bg3_x as usize + x) + (bg3_y as usize + y * bg3_tiles);
+							let tile = pixel_offset / 8;
+							let tile_number = self.vram[bg3_cnt.get_map_data_address() + tile] as usize;
 
-						let pixel_index = x * 240 + y;
-						pixels[pixel_index] = color.get_red();
-						pixels[pixel_index + 1] = color.get_green();
-						pixels[pixel_index + 2] = color.get_blue();
+							let palette_color_index = (self.vram[bg3_cnt.get_tile_data_address() + (tile_number * 64) + (pixel_offset % 8)] * 2) as usize;
+							let color = Color::new((self.palette_ram[palette_color_index + 1] as u16) << 8 | self.palette_ram[palette_color_index] as u16);
+
+							let pixel_index = (y * 240 + x) * 3;
+							pixels[pixel_index] = color.get_red();
+							pixels[pixel_index + 1] = color.get_green();
+							pixels[pixel_index + 2] = color.get_blue();
+						}
 					}
 				}
+				EVideoMode::Mode3 => {}
+				EVideoMode::Mode4 => {}
+				EVideoMode::Mode5 => {}
 			}
-			EVideoMode::Mode3 => {}
-			EVideoMode::Mode4 => {}
-			EVideoMode::Mode5 => {}
 		}
 
 		pixels
@@ -496,8 +593,12 @@ impl<'a> DispStat<'a> {
 		self.0.set(1, value);
 	}
 
-	pub fn get_v_counter(&self) -> bool {
+	pub fn get_v_counter_flag(&self) -> bool {
 		self.0[2]
+	}
+
+	pub fn set_v_counter_flag(&mut self, value: bool) {
+		self.0.set(2, value);
 	}
 
 	pub fn get_v_blank_irq(&self) -> bool {
@@ -573,9 +674,40 @@ impl<'a> BgPixelIncrement<'a> {
 	}
 }
 
-struct BgTransform<'a>(&'a Gba8BitSlice);
+struct SpriteTransformFloat<'a>(&'a Gba8BitSlice);
 
-impl<'a> BgTransform<'a> {
+impl<'a> SpriteTransformFloat<'a> {
+	pub fn new(register: &'a Gba8BitSlice) -> Self {
+		Self { 0: register }
+	}
+
+	pub fn get_fractional(&self) -> u8 {
+		self.0[0..=7].load_le()
+	}
+
+	pub fn get_integer(&self) -> u32 {
+		self.0[8..=0xe].load_le()
+	}
+
+	pub fn get_is_negative(&self) -> bool {
+		self.0[0xf]
+	}
+
+	pub fn get_value(&self) -> f32 {
+		let mut result = self.get_integer() as f32;
+		result += self.get_fractional() as f32 * 1.0 / 256.0;
+
+		if self.get_is_negative() {
+			result *= -1.0;
+		}
+
+		result
+	}
+}
+
+struct BgTransformFloat<'a>(&'a Gba8BitSlice);
+
+impl<'a> BgTransformFloat<'a> {
 	pub fn new(register: &'a Gba8BitSlice) -> Self {
 		Self { 0: register }
 	}

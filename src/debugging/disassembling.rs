@@ -368,10 +368,6 @@ pub fn disassemble_arm(instruction: u32) -> String {
 			panic!("ERROR!!!");
 		}
 
-		if !l_bool && op != "H" {
-			panic!("ERROR!");
-		}
-
 		let rn = (instruction & 0x000f_0000) >> 16;
 		let offset;
 		if i {

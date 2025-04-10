@@ -32,6 +32,7 @@ pub fn operate_arm(cpu: &mut CPU, bus: &mut SystemBus, instruction: u32) {
 		} else if (0xe000_0010 & instruction) == 0x0600_0010 {
 			// Undefined instruction
 			cpu.exception(EExceptionType::Undefined);
+			return;
 		} else if (0x0fb0_0ff0 & instruction) == 0x0100_0090 {
 			// SWP/SWPB
 			let b = (1 << 22 & instruction) != 0;
@@ -322,11 +323,6 @@ pub fn operate_arm(cpu: &mut CPU, bus: &mut SystemBus, instruction: u32) {
 				let new_address = if u { rn.wrapping_add(offset) } else { rn.wrapping_sub(offset) };
 				cpu.set_register_value(rn_index, new_address);
 			}
-
-			// NOTE: PC Changed!!!
-			if l && rd_index == PROGRAM_COUNTER_REGISTER {
-				return;
-			}
 		} else if (0x0e00_0090 & instruction) == 0x0000_0090 {
 			//LDRSHD/STRSHD Halfword, Doubleword, Signed Data Transfer
 			let p = (0x0100_0000 & instruction) != 0;
@@ -378,7 +374,7 @@ pub fn operate_arm(cpu: &mut CPU, bus: &mut SystemBus, instruction: u32) {
 							data = bus.read_16(address) as u32;
 						} else {
 							// NOTE: Forced alignment and rotation of data! (UNPREDICTABLE)
-							data = bus.read_16(address - 1).rotate_right(8) as u32;
+							data = bus.read_16(address & !0x1).rotate_right(8) as u32;
 						}
 					}
 				} else {
@@ -395,7 +391,7 @@ pub fn operate_arm(cpu: &mut CPU, bus: &mut SystemBus, instruction: u32) {
 			} else {
 				let rd = cpu.get_register_value(rd_index);
 				// NOTE: Forced alignment! (UNPREDICTABLE)
-				bus.write_16(address - 1, rd as u16);
+				bus.write_16(address & !0x1, rd as u16);
 			}
 
 			// Pre Indexed
@@ -405,11 +401,6 @@ pub fn operate_arm(cpu: &mut CPU, bus: &mut SystemBus, instruction: u32) {
 				// Post Indexed
 				let new_address = if u { rn.wrapping_add(offset) } else { rn.wrapping_sub(offset) };
 				cpu.set_register_value(rn_index, new_address);
-			}
-
-			// NOTE: PC Changed!!!
-			if l && rd_index == PROGRAM_COUNTER_REGISTER {
-				return;
 			}
 		} else if (0x0e00_0000 & instruction) == 0x0800_0000 {
 			// LDM/STM Load/Store multiple registers
@@ -519,6 +510,7 @@ pub fn operate_arm(cpu: &mut CPU, bus: &mut SystemBus, instruction: u32) {
 		} else if (0x0f00_0000 & instruction) == 0x0f00_0000 {
 			// SWI Software Interrupt Exception
 			cpu.exception(EExceptionType::SoftwareInterrupt);
+			return;
 		} else if (0x0c00_0000 & instruction) == 0x0000_0000 {
 			// ALU
 			let i = (0x0200_0000 & instruction) > 0;
@@ -978,6 +970,4 @@ pub fn operate_arm(cpu: &mut CPU, bus: &mut SystemBus, instruction: u32) {
 			}
 		}
 	}
-
-	cpu.set_register_value(PROGRAM_COUNTER_REGISTER, cpu.get_current_pc() + 4);
 }
