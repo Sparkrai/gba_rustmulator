@@ -82,6 +82,7 @@ impl CPU {
 	}
 }
 
+#[derive(Clone)]
 pub struct CPSR {
 	bits: GbaRegisterBits,
 }
