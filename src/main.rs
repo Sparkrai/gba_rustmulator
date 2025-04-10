@@ -4,21 +4,25 @@ use std::io::Read;
 use bitvec::prelude::*;
 use imgui::*;
 use num_derive::*;
+use num_traits::{FromPrimitive, PrimInt};
 
 use cpu::*;
 use memory::*;
-use num_traits::FromPrimitive;
 
 mod cpu;
 mod memory;
 mod windowing;
 
-#[derive(Debug, Copy, Clone, FromPrimitive)]
+#[derive(Debug, Copy, Clone, Eq, PartialEq, FromPrimitive)]
 enum EShiftType {
 	LSL,
 	LSR,
 	ASR,
 	ROR,
+}
+
+fn sign_extend(x: u32) -> i32 {
+	(x as i32 ^ 0x80_0000) - 0x80_0000
 }
 
 fn main() {
@@ -43,6 +47,7 @@ fn main() {
 		let mut show_demo_window = false;
 
 		let mut debug_mode = true;
+		let mut current_inspected_address = cpu.registers[PROGRAM_COUNTER_REGISTER];
 
 		system.main_loop(move |_, ui| {
 			ui.main_menu_bar(|| {
@@ -66,7 +71,7 @@ fn main() {
 			}
 
 			if show_memory_debug_window {
-				build_memory_debug_window(&mut cpu, &mut bus, &mut show_memory_debug_window, &ui);
+				build_memory_debug_window(&mut cpu, &mut bus, &mut show_memory_debug_window, &mut current_inspected_address, &ui);
 			}
 
 			if show_demo_window {
@@ -82,11 +87,23 @@ fn main() {
 	}
 }
 
-fn build_memory_debug_window(cpu: &mut CPU, bus: &mut MemoryBus, mut show_memory_window: &mut bool, ui: &&mut Ui) {
-	Window::new(im_str!("Current Memory")).size([450.0, 250.0], Condition::FirstUseEver).position([750.0, 100.0], Condition::FirstUseEver).opened(&mut show_memory_window).build(ui, || {
+fn build_memory_debug_window(cpu: &mut CPU, bus: &mut MemoryBus, show_memory_window: &mut bool, address: &mut u32, ui: &&mut Ui) {
+	Window::new(im_str!("Current Memory")).size([450.0, 250.0], Condition::FirstUseEver).position([750.0, 100.0], Condition::FirstUseEver).opened(show_memory_window).build(ui, || {
 		ui.text("Current instruction highlighted");
 		if ui.button(im_str!("Step"), [0.0, 0.0]) {
 			decode(cpu, bus);
+			*address = cpu.registers[PROGRAM_COUNTER_REGISTER];
+		}
+
+		let mut new_address = 0;
+		ui.same_line(0.0);
+		if ui.input_int(im_str!("Address:"), &mut new_address).step(4).chars_hexadecimal(true).build() {
+			*address = new_address as u32;
+		}
+
+		ui.same_line(0.0);
+		if ui.button(im_str!("Current PC"), [0.0, 0.0]) {
+			*address = cpu.registers[PROGRAM_COUNTER_REGISTER];
 		}
 
 		ui.separator();
@@ -95,7 +112,7 @@ fn build_memory_debug_window(cpu: &mut CPU, bus: &mut MemoryBus, mut show_memory
 			ui.set_column_width(0, 95.0);
 
 			const ENTRIES: i32 = 300;
-			let starting_address = cpu.registers[PROGRAM_COUNTER_REGISTER].saturating_sub(20);
+			let starting_address = address.saturating_sub(20);
 			let mut list_clipper = ListClipper::new(ENTRIES).begin(&ui);
 			while list_clipper.step() {
 				for row in list_clipper.display_start()..list_clipper.display_end() {
@@ -191,7 +208,7 @@ fn build_cpu_debug_window(cpu: &CPU, ui: &&mut Ui, opened: &mut bool) {
 	});
 }
 
-fn  cond_passed(cpu: &CPU, cond: u8) -> bool {
+fn cond_passed(cpu: &CPU, cond: u8) -> bool {
 	match cond {
 		0x0 => cpu.cpsr.get_z(), // Equal (Zero)
 		0x1 => !cpu.cpsr.get_z(), // Not Equal (Nonzero)
@@ -219,7 +236,7 @@ fn decode(cpu: &mut CPU, bus: &mut MemoryBus) {
 		//let instruction = bus.read_16(pc);
 	} else {
 		let instruction = bus.read_32(pc);
-		 print_assembly_line(disassemble_arm(instruction), pc);
+		print_assembly_line(disassemble_arm(instruction), pc);
 
 		let cond = (instruction >> (32 - 4)) as u8;
 		if (0x0fff_fff0 & instruction) == 0x012f_ff10 {
@@ -231,89 +248,108 @@ fn decode(cpu: &mut CPU, bus: &mut MemoryBus) {
 				cpu.registers[LINK_REGISTER_REGISTER] = cpu.registers[PROGRAM_COUNTER_REGISTER] + 4;
 			}
 
-			let offset = (0x00ff_ffff & instruction) as i32;
-			cpu.registers[PROGRAM_COUNTER_REGISTER] = (cpu.registers[PROGRAM_COUNTER_REGISTER] as i32 + 8 + (offset * 4)) as u32;
+			let offset = sign_extend(0x00ff_ffff & instruction);
+			cpu.registers[PROGRAM_COUNTER_REGISTER] = (cpu.registers[PROGRAM_COUNTER_REGISTER] as i32 + 8 + (offset << 2)) as u32;
 			return;
 		} else if (0x0c00_0000 & instruction) == 0x0400_0000 {
-			let i = (0x0200_0000 & instruction) > 0;
-			let u = (0x0080_0000 & instruction) > 0;
-			let b = (0x0040_0000 & instruction) > 0;
-			let t = (0x0020_0000 & instruction) > 0;
-			let l = (0x0010_0000 & instruction) > 0;
+			if cond_passed(cpu, cond) {
+				let i = (0x0200_0000 & instruction) > 0;
+				let p = (0x0100_0000 & instruction) > 0;
+				let u = (0x0080_0000 & instruction) > 0;
+				let b = (0x0040_0000 & instruction) > 0;
+				let w = (0x0020_0000 & instruction) > 0;
+				let l = (0x0010_0000 & instruction) > 0;
 
-			let rn_index = ((instruction & 0x000f_0000) >> 16) as usize;
-			let rn = cpu.registers[rn_index];
-			let rd_index = ((instruction & 0x0000_f000) >> 12) as usize;
-			let address;
-			if i {
-				let rm = cpu.registers[(instruction & 0x0000_000f) as usize];
-				let shift_type: EShiftType = FromPrimitive::from_u32((instruction & 0x0000_0060) >> 0).unwrap();
-				let shift = (0x0000_0f80 & instruction) >> 7;
+				let rn_index = ((instruction & 0x000f_0000) >> 16) as usize;
+				let rn = cpu.registers[rn_index];
+				let rd_index = ((instruction & 0x0000_f000) >> 12) as usize;
+				let offset;
+				if i {
+					let rm = cpu.registers[(instruction & 0x0000_000f) as usize];
+					let shift_type: EShiftType = FromPrimitive::from_u32((instruction & 0x0000_0060) >> 0).unwrap();
+					let shift = (0x0000_0f80 & instruction) >> 7;
 
-				let index;
-				if shift > 0 || shift_type != EShiftType::LSL {
-					match shift_type {
-						EShiftType::LSL => {
-							index = rm << shift;
-						}
-						EShiftType::LSR => {
-							if shift == 0 {
-								index = 0;
-							} else {
-								index = rm >> shift;
+					if shift > 0 || shift_type != EShiftType::LSL {
+						match shift_type {
+							EShiftType::LSL => {
+								offset = rm << shift;
 							}
-						}
-						EShiftType::ASR => {
-							if shift == 0 {
-								if (rm & 0x8000_0000) > 0 {
-									index = 0xffff_ffff;
+							EShiftType::LSR => {
+								if shift == 0 {
+									offset = 0;
 								} else {
-									index = 0;
+									offset = rm >> shift;
 								}
-							} else {
-								index = ((rm as i32) >> shift) as u32;
+							}
+							EShiftType::ASR => {
+								if shift == 0 {
+									if (rm & 0x8000_0000) > 0 {
+										offset = 0xffff_ffff;
+									} else {
+										offset = 0;
+									}
+								} else {
+									offset = rm.signed_shr(shift);
+								}
+							}
+							EShiftType::ROR => {
+								if shift == 0 {
+									offset = ((cpu.cpsr.get_c() as u32) << 31) | (rm >> 1);
+								} else {
+									offset = rm.rotate_right(shift);
+								}
 							}
 						}
-						EShiftType::ROR => {
-							if shift == 0 {
-								index = ((cpu.cpsr.get_c() as u32) << 31) | (rm >> 1);
-							} else {
-								index = rm.rotate_right(shift);
-							}
-						}
+					} else {
+						offset = rm;
 					}
 				} else {
-					index = rm;
+					// Immediate
+					offset = instruction & 0x0000_0fff;
 				}
 
-				if u {
-					address = rn + index;
+				let address = if p {
+					if u {
+						rn + offset
+					} else {
+						rn - offset
+					}
 				} else {
-					address = rn - index;
-				}
-			} else {
-				// Immediate
-				let offset = instruction & 0x0000_0fff;
-				if u {
-					address = rn + offset;
-				} else {
-					address = rn - offset;
-				}
-			}
+					rn
+				};
 
-			// TODO: Account for pre/post index
-			if cond_passed(cpu, cond) {
 				if b {
-					cpu.registers[rd_index] = bus.read_8(address) as u32;
+					if l {
+						cpu.registers[rd_index] = bus.read_8(address) as u32;
+					}
+					else {
+						bus.write_8(address, cpu.registers[rd_index] as u8);
+					}
 				} else {
-					cpu.registers[rd_index] = bus.read_32(address);
+					if l {
+						cpu.registers[rd_index] = bus.read_32(address) as u32;
+					}
+					else {
+						bus.write_32(address, cpu.registers[rd_index]);
+					}
 				}
 
-				if p && t {
+				// Pre Indexed
+				if p && w {
 					cpu.registers[rn_index] = address;
+				} else if !p {
+					// Post Indexed
+					if w {
+						// TODO: User mode!!!
+					}
+
+					cpu.registers[rn_index] = if u {
+						rn + offset
+					} else {
+						rn - offset
+					};
 				}
 			}
-
 		} else if (0x0c00_0000 & instruction) == 0x0000_0000 {
 			let i = (0x0200_0000 & instruction) > 0;
 			let s = (0x0010_0000 & instruction) > 0;
@@ -334,7 +370,7 @@ fn decode(cpu: &mut CPU, bus: &mut MemoryBus) {
 			} else {
 				let rm = cpu.registers[(instruction & 0x0000_000f) as usize];
 				let r = (instruction & 0x0000_0010) > 0;
-				let shift_type: EShiftType = FromPrimitive::from_u32((instruction & 0x0000_0060) >> 0).unwrap();
+				let shift_type: EShiftType = FromPrimitive::from_u32((instruction & 0x0000_0060) >> 5).unwrap();
 				if r {
 					let rs = cpu.registers[((0x0000_0f00 & instruction) >> 8) as usize] & 0x0000_00ff;
 
@@ -374,7 +410,7 @@ fn decode(cpu: &mut CPU, bus: &mut MemoryBus) {
 								shifter_operand = rm;
 								shifter_carry_out = cpu.cpsr.get_c();
 							} else if rs < 32 {
-								shifter_operand = (rm as i32 >> rs) as u32;
+								shifter_operand = rm.signed_shr(rs);
 								shifter_carry_out = rm.view_bits::<Lsb0>()[(rs - 1) as usize];
 							} else {
 								if (rm & 0x8000_0000) == 0 {
@@ -429,7 +465,7 @@ fn decode(cpu: &mut CPU, bus: &mut MemoryBus) {
 								}
 								shifter_carry_out = (rm & 0x8000_0000) > 0;
 							} else {
-								shifter_operand = (rm as i32 >> shift) as u32;
+								shifter_operand = rm.signed_shr(shift);
 								shifter_carry_out = rm.view_bits::<Lsb0>()[(shift - 1) as usize];
 							}
 						}
@@ -775,22 +811,29 @@ fn disassemble_arm(instruction: u32) -> String {
 			return format!("MSR {}{}, R{}", psr, fields, instruction & 0x0000_00ff);
 		}
 	} else if (0x0c00_0000 & instruction) == 0x0400_0000 {
+		let p = (0x0100_0000 & instruction) > 0;
+		let w = (0x0020_0000 & instruction) > 0;
 		let i = (0x0200_0000 & instruction) > 0;
 		let u = if (0x0080_0000 & instruction) > 0 { "+" } else { "-" };
 		let b = if (0x0040_0000 & instruction) > 0 { "B" } else { "" };
-		let t = if (0x0020_0000 & instruction) > 0 { "T" } else { "" };
 		let l = if (0x0010_0000 & instruction) > 0 { "LDR" } else { "STR" };
+		let t = if !p && w { "T" } else { "" };
 
 		let rn = (instruction & 0x000f_0000) >> 16;
 		let address;
 		if i {
 			let rm = instruction & 0x0000_000f;
-			let shift_type: EShiftType = FromPrimitive::from_u32((instruction & 0x0000_0060) >> 0).unwrap();
+			let shift_type: EShiftType = FromPrimitive::from_u32((instruction & 0x0000_0060) >> 5).unwrap();
 			let shift = (0x0000_0f80 & instruction) >> 7;
 
 			address = format!("[R{}, R{}, {:?} #{:#X}]", rn, rm, shift_type, shift);
 		} else {
-			address = format!("[R{}, #{}{}]", rn, u, instruction & 0x0000_0fff);
+			if p {
+				let pre = if w { "!" } else { "" };
+				address = format!("[R{}, #{}{:#X}]{}", rn, u, instruction & 0x0000_0fff, pre);
+			} else {
+				address = format!("[R{}], #{}{:#X}", rn, u, instruction & 0x0000_0fff);
+			}
 		}
 
 		return format!("{}{}{} R{}, {}", l, b, t, (instruction & 0x0000_f000) >> 12, address);
@@ -897,7 +940,7 @@ fn disassemble_arm(instruction: u32) -> String {
 		} else {
 			let rm = instruction & 0x0000_000f;
 			let r = (instruction & 0x0000_0010) > 0;
-			let shift_type: EShiftType = FromPrimitive::from_u32((instruction & 0x0000_0060) >> 0).unwrap();
+			let shift_type: EShiftType = FromPrimitive::from_u32((instruction & 0x0000_0060) >> 5).unwrap();
 			if r {
 				let rs = (0x0000_0f00 & instruction) >> 8;
 				shifter_operand = format!("R{}, {:?}, R{}", rm, shift_type, rs);
