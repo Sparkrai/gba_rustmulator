@@ -3,9 +3,9 @@ use num_traits::PrimInt;
 
 use crate::arm7tdmi::cpu::{CPU, LINK_REGISTER_REGISTER, PROGRAM_COUNTER_REGISTER, STACK_POINTER_REGISTER};
 use crate::arm7tdmi::{cond_passed, sign_extend, EExceptionType, EShiftType};
-use crate::memory::MemoryBus;
+use crate::system::{MemoryInterface, SystemBus};
 
-pub fn operate_thumb(instruction: u16, cpu: &mut CPU, bus: &mut MemoryBus) {
+pub fn operate_thumb(instruction: u16, cpu: &mut CPU, bus: &mut SystemBus) {
 	// ADD / SUB register
 	if (0xf800 & instruction) == 0x1800 {
 		let is_sub = (0x0200 & instruction) != 0;
@@ -619,7 +619,8 @@ pub fn operate_thumb(instruction: u16, cpu: &mut CPU, bus: &mut MemoryBus) {
 		let pop = (0x0800 & instruction) != 0;
 		let r = (0x0100 & instruction) != 0;
 		let sp = cpu.get_register_value(STACK_POINTER_REGISTER) & !0x3;
-		let reg_list = (0x00ff & instruction).view_bits::<Lsb0>().to_bitvec().into_boxed_bitslice();
+		let regs_value = 0x00ff & instruction;
+		let reg_list = regs_value.view_bits::<Lsb0>();
 
 		if pop {
 			// NOTE: Forced alignment!
@@ -667,7 +668,7 @@ pub fn operate_thumb(instruction: u16, cpu: &mut CPU, bus: &mut MemoryBus) {
 		let l = (0x0800 & instruction) != 0;
 		let rn_index = ((0x0700 & instruction) >> 8) as u8;
 		let rn = cpu.get_register_value(rn_index);
-		let reg_list = (0x00ff & instruction).view_bits::<Lsb0>().to_bitvec().into_boxed_bitslice();
+		let reg_list = &instruction.view_bits::<Lsb0>()[0..8];
 
 		// Addressing Mode
 		let start_address = rn;

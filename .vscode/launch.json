@@ -27,7 +27,7 @@
         {
             "type": "lldb",
             "request": "launch",
-            "name": "Debug executable 'gba_rustmulator'",
+            "name": "LLDB 'gba_rustmulator'",
             "cargo": {
                 "args": [
                     "build",
@@ -41,7 +41,33 @@
             },
             "args": [],
             "cwd": "${workspaceFolder}",
-            "sourceLanguages": ["rust"]
+            "sourceLanguages": ["rust"],
+            "env": {
+                "RUST_BACKTRACE": "1",
+            }
+        },
+        {
+            "type": "lldb",
+            "request": "launch",
+            "name": "LLDB Release 'gba_rustmulator'",
+            "cargo": {
+                "args": [
+                    "build",
+                    "--release",
+                    "--bin=gba_rustmulator",
+                    "--package=gba_rustmulator"
+                ],
+                "filter": {
+                    "name": "gba_rustmulator",
+                    "kind": "bin"
+                }
+            },
+            "args": [],
+            "cwd": "${workspaceFolder}",
+            "sourceLanguages": ["rust"],
+            "env": {
+                "RUST_BACKTRACE": "1",
+            }
         },
         {
             "type": "lldb",

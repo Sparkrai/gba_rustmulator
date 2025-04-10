@@ -3,10 +3,6 @@ use num_traits::FromPrimitive;
 use crate::arm7tdmi::{sign_extend, EShiftType};
 use bitvec::prelude::*;
 
-pub fn print_assembly_line(line: String, pc: u32) {
-	println!("{:#06X}| {}", pc, line)
-}
-
 pub fn disassemble_cond(cond: u8) -> &'static str {
 	match cond {
 		0x0 => "EQ",

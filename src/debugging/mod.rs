@@ -3,13 +3,13 @@ use imgui::*;
 use crate::arm7tdmi::cpu::CPU;
 use crate::arm7tdmi::EOperatingMode;
 use crate::debugging::disassembling::{disassemble_arm, disassemble_thumb};
-use crate::memory::MemoryBus;
+use crate::system::{MemoryInterface, SystemBus};
 
 mod disassembling;
 
 pub fn build_memory_debug_window(
 	cpu: &CPU,
-	bus: &MemoryBus,
+	bus: &SystemBus,
 	show_memory_window: &mut bool,
 	address: &mut u32,
 	debug_mode: &mut bool,
@@ -65,7 +65,7 @@ pub fn build_memory_debug_window(
 
 			ui.separator();
 			if let Some(scroll_token) = ChildWindow::new(im_str!("##ScrollingRegion")).begin(&ui) {
-				ui.columns(3, im_str!("memory"), true);
+				ui.columns(3, im_str!("system"), true);
 				ui.set_column_width(0, 95.0);
 
 				const ENTRIES: i32 = 20;

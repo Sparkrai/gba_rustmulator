@@ -4,14 +4,15 @@ use std::io::Read;
 use imgui::*;
 
 use arm7tdmi::cpu::*;
-use memory::*;
+use system::*;
 
 use crate::debugging::{build_cpu_debug_window, build_memory_debug_window};
 use std::sync::{Arc, RwLock};
 
 mod arm7tdmi;
 mod debugging;
-mod memory;
+mod gpu;
+mod system;
 mod windowing;
 
 fn main() {
@@ -21,11 +22,9 @@ fn main() {
 	// Start in System mode
 	cpu_raw.get_mut_cpsr().set_mode_bits(0x1f);
 
-	let mut bus_raw = MemoryBus::new();
-
 	let mut bios_data = Vec::<u8>::new();
 	File::open("data/bios.gba").expect("Bios couldn't be opened!").read_to_end(&mut bios_data).unwrap();
-	bus_raw.load_bios(&bios_data);
+	let bus_raw = SystemBus::new(bios_data.into_boxed_slice());
 
 	let mut cartridge_data = Vec::<u8>::new();
 	if File::open("data/demos/hello.gba")
@@ -33,8 +32,6 @@ fn main() {
 		.read_to_end(&mut cartridge_data)
 		.is_ok()
 	{
-		bus_raw.load_cartridge(&cartridge_data);
-
 		let mut show_cpu_debug_window = true;
 		let mut show_memory_debug_window = true;
 		let mut show_demo_window = false;

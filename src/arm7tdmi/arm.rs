@@ -1,12 +1,13 @@
-use bitvec::order::Lsb0;
-use bitvec::prelude::BitView;
+use std::u32;
+
+use bitvec::prelude::*;
 use num_traits::{FromPrimitive, PrimInt};
 
 use crate::arm7tdmi::cpu::{CPU, LINK_REGISTER_REGISTER, PROGRAM_COUNTER_REGISTER};
 use crate::arm7tdmi::{cond_passed, sign_extend, EExceptionType, EOperatingMode, EShiftType};
-use crate::memory::MemoryBus;
+use crate::system::{MemoryInterface, SystemBus};
 
-pub fn operate_arm(cpu: &mut CPU, bus: &mut MemoryBus, instruction: u32) {
+pub fn operate_arm(cpu: &mut CPU, bus: &mut SystemBus, instruction: u32) {
 	let cond = (instruction >> (32 - 4)) as u8;
 	if cond_passed(cpu, cond) {
 		if (0x0fff_fff0 & instruction) == 0x012f_ff10 {
@@ -409,7 +410,7 @@ pub fn operate_arm(cpu: &mut CPU, bus: &mut MemoryBus, instruction: u32) {
 			// NOTE: Forced alignment!!!
 			let rn_index = ((instruction & 0x000f_0000) >> 16) as u8;
 			let rn = cpu.get_register_value(rn_index) & !0x3;
-			let reg_list = (0x0000_ffff & instruction).view_bits::<Lsb0>().to_bitvec().into_boxed_bitslice();
+			let reg_list = &instruction.view_bits::<Lsb0>()[0..16];
 
 			// Addressing Mode
 			let start_address;

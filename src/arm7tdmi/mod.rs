@@ -5,7 +5,7 @@ use num_derive::*;
 use num_traits::{AsPrimitive, PrimInt};
 
 use crate::arm7tdmi::cpu::CPU;
-use crate::memory::MemoryBus;
+use crate::system::{MemoryInterface, SystemBus};
 
 mod arm;
 pub mod cpu;
@@ -13,7 +13,9 @@ mod psr;
 mod thumb;
 
 pub type Gba32BitSlice = BitSlice<Lsb0, u32>;
-pub type GbaRegisterBits = BitArray<Lsb0, [u32; 1]>;
+pub type Gba16BitSlice = BitSlice<Lsb0, u16>;
+pub type Gba32BitRegister = BitArray<Lsb0, [u32; 1]>;
+pub type Gba16BitRegister = BitArray<Lsb0, [u16; 1]>;
 
 #[derive(Debug, Copy, Clone, Eq, PartialEq, FromPrimitive, ToPrimitive)]
 pub enum EOperatingMode {
@@ -73,7 +75,7 @@ pub fn cond_passed(cpu: &CPU, cond: u8) -> bool {
 	}
 }
 
-pub fn decode(cpu: &mut CPU, bus: &mut MemoryBus) {
+pub fn decode(cpu: &mut CPU, bus: &mut SystemBus) {
 	// NOTE: Read CPU state
 	let pc = cpu.get_current_pc();
 	if cpu.get_cpsr().get_t() {
