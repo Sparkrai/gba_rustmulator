@@ -32,7 +32,7 @@ fn main() {
 	let mut bus = MemoryBus::new();
 
 	// Start in System mode
-	cpu.cpsr.set_mode_bits(0x1f);
+	cpu.get_mut_cpsr().set_mode_bits(0x1f);
 
 	let mut bios_data = Vec::<u8>::new();
 	File::open("data/bios.gba").expect("Bios couldn't be opened!").read_to_end(&mut bios_data).unwrap();
@@ -47,7 +47,7 @@ fn main() {
 		let mut show_demo_window = false;
 
 		let mut debug_mode = true;
-		let mut current_inspected_address = cpu.registers[PROGRAM_COUNTER_REGISTER];
+		let mut current_inspected_address = 0;
 
 		system.main_loop(move |_, ui| {
 			ui.main_menu_bar(|| {
@@ -71,7 +71,7 @@ fn main() {
 			}
 
 			if show_memory_debug_window {
-				build_memory_debug_window(&mut cpu, &mut bus, &mut show_memory_debug_window, &mut current_inspected_address, &ui);
+				build_memory_debug_window(&mut cpu, &mut bus, &mut show_memory_debug_window, &mut current_inspected_address, &mut debug_mode, &ui);
 			}
 
 			if show_demo_window {
@@ -87,23 +87,30 @@ fn main() {
 	}
 }
 
-fn build_memory_debug_window(cpu: &mut CPU, bus: &mut MemoryBus, show_memory_window: &mut bool, address: &mut u32, ui: &&mut Ui) {
-	Window::new(im_str!("Current Memory")).size([450.0, 250.0], Condition::FirstUseEver).position([750.0, 100.0], Condition::FirstUseEver).opened(show_memory_window).build(ui, || {
+fn build_memory_debug_window(cpu: &mut CPU, bus: &mut MemoryBus, show_memory_window: &mut bool, address: &mut u32, debug_mode: &mut bool, ui: &&mut Ui) {
+	Window::new(im_str!("Current Memory")).size([600.0, 500.0], Condition::FirstUseEver).position([750.0, 100.0], Condition::FirstUseEver).opened(show_memory_window).build(ui, || {
+		let pc_offset = if cpu.get_cpsr().get_t() { 4 } else { 8 };
+
 		ui.text("Current instruction highlighted");
+		if !*debug_mode {
+			*address = cpu.get_register_value(PROGRAM_COUNTER_REGISTER) - pc_offset;
+		}
+
 		if ui.button(im_str!("Step"), [0.0, 0.0]) {
 			decode(cpu, bus);
-			*address = cpu.registers[PROGRAM_COUNTER_REGISTER];
+			*address = cpu.get_register_value(PROGRAM_COUNTER_REGISTER) - pc_offset;
 		}
-
-		let mut new_address = 0;
 		ui.same_line(0.0);
-		if ui.input_int(im_str!("Address:"), &mut new_address).step(4).chars_hexadecimal(true).build() {
-			*address = new_address as u32;
-		}
+		ui.checkbox(im_str!("Debug"), debug_mode);
 
-		ui.same_line(0.0);
+		let mut new_address = *address as i32;
 		if ui.button(im_str!("Current PC"), [0.0, 0.0]) {
-			*address = cpu.registers[PROGRAM_COUNTER_REGISTER];
+			*address = cpu.get_register_value(PROGRAM_COUNTER_REGISTER) - pc_offset;
+		}
+
+		ui.same_line(0.0);
+		if ui.input_int(im_str!("Address"), &mut new_address).step(4).chars_hexadecimal(true).build() {
+			*address = new_address as u32;
 		}
 
 		ui.separator();
@@ -118,10 +125,10 @@ fn build_memory_debug_window(cpu: &mut CPU, bus: &mut MemoryBus, show_memory_win
 				for row in list_clipper.display_start()..list_clipper.display_end() {
 					let address = starting_address + (row as u32 * 4);
 
-					Selectable::new(&*im_str!("{:#010X}:", address)).selected(address == cpu.registers[PROGRAM_COUNTER_REGISTER]).span_all_columns(true).build(&ui);
+					Selectable::new(&*im_str!("{:#010X}:", address)).selected(address == cpu.get_register_value(PROGRAM_COUNTER_REGISTER) - pc_offset).span_all_columns(true).build(&ui);
 					ui.next_column();
 
-					for j in 0..4 {
+					for j in 0..pc_offset / 2 {
 						let value = bus.read_8(address as u32 + j);
 						let color = if value == 0 {
 							[0.5, 0.5, 0.5, 0.5]
@@ -135,7 +142,7 @@ fn build_memory_debug_window(cpu: &mut CPU, bus: &mut MemoryBus, show_memory_win
 					}
 
 					ui.next_column();
-					ui.text(disassemble_arm(bus.read_32(address as u32)));
+					ui.text(if cpu.get_cpsr().get_t() { disassemble_thumb(bus.read_16(address as u32)) } else { disassemble_arm(bus.read_32(address as u32)) });
 					ui.next_column();
 					ui.separator();
 				}
@@ -150,7 +157,7 @@ fn build_cpu_debug_window(cpu: &CPU, ui: &&mut Ui, opened: &mut bool) {
 	Window::new(im_str!("CPU")).size([650.0, 600.0], Condition::FirstUseEver).opened(opened).build(ui, || {
 		if CollapsingHeader::new(im_str!("GPRs")).default_open(true).build(&ui) {
 			ui.columns(2, im_str!("User Registers"), true);
-			for (i, register) in cpu.registers.iter().enumerate() {
+			for (i, register) in cpu.get_registers().iter().enumerate() {
 				ui.text(format!("r{}:", i));
 				ui.next_column();
 				ui.text(format!("{:#X}", register));
@@ -181,7 +188,7 @@ fn build_cpu_debug_window(cpu: &CPU, ui: &&mut Ui, opened: &mut bool) {
 			ui.separator();
 
 			let cpsr_names = ["CPSR", "SPSR_fiq", "SPSR_svc", "SPSR_abt", "SPSR_irq", "SPSR_und"];
-			for (i, cpsr) in [&cpu.cpsr, &cpu.spsr_fiq, &cpu.spsr_svc, &cpu.spsr_abt, &cpu.spsr_irq, &cpu.spsr_und].iter().enumerate() {
+			for (i, cpsr) in [cpu.get_spsr(EOperatingMode::UserMode), cpu.get_spsr(EOperatingMode::FiqMode), cpu.get_spsr(EOperatingMode::SupervisorMode), cpu.get_spsr(EOperatingMode::AbortMode), cpu.get_spsr(EOperatingMode::IrqMode), cpu.get_spsr(EOperatingMode::UndefinedMode)].iter().enumerate() {
 				ui.next_column();
 				ui.text(cpsr_names[i]);
 				ui.next_column();
@@ -210,49 +217,108 @@ fn build_cpu_debug_window(cpu: &CPU, ui: &&mut Ui, opened: &mut bool) {
 
 fn cond_passed(cpu: &CPU, cond: u8) -> bool {
 	match cond {
-		0x0 => cpu.cpsr.get_z(), // Equal (Zero)
-		0x1 => !cpu.cpsr.get_z(), // Not Equal (Nonzero)
-		0x2 => cpu.cpsr.get_c(), // Carry set
-		0x3 => !cpu.cpsr.get_c(), // Carry cleared
-		0x4 => cpu.cpsr.get_n(), // Signed negative
-		0x5 => !cpu.cpsr.get_n(), // Signed positive or zero
-		0x6 => cpu.cpsr.get_v(), // Signed overflow
-		0x7 => !cpu.cpsr.get_v(), // Signed no overflow
-		0x8 => cpu.cpsr.get_c() && !cpu.cpsr.get_z(), // Unsigned higher
-		0x9 => !cpu.cpsr.get_c() && cpu.cpsr.get_z(), // Unsigned lower or same
-		0xa => cpu.cpsr.get_n() == cpu.cpsr.get_v(), // Signed greater or equal
-		0xb => cpu.cpsr.get_n() != cpu.cpsr.get_v(), // Signed less than
-		0xc => !cpu.cpsr.get_z() && cpu.cpsr.get_n() == cpu.cpsr.get_v(), // Signed greater than
-		0xd => cpu.cpsr.get_z() && cpu.cpsr.get_n() != cpu.cpsr.get_v(), // Signed less or equal
+		0x0 => cpu.get_cpsr().get_z(), // Equal (Zero)
+		0x1 => !cpu.get_cpsr().get_z(), // Not Equal (Nonzero)
+		0x2 => cpu.get_cpsr().get_c(), // Carry set
+		0x3 => !cpu.get_cpsr().get_c(), // Carry cleared
+		0x4 => cpu.get_cpsr().get_n(), // Signed negative
+		0x5 => !cpu.get_cpsr().get_n(), // Signed positive or zero
+		0x6 => cpu.get_cpsr().get_v(), // Signed overflow
+		0x7 => !cpu.get_cpsr().get_v(), // Signed no overflow
+		0x8 => cpu.get_cpsr().get_c() && !cpu.get_cpsr().get_z(), // Unsigned higher
+		0x9 => !cpu.get_cpsr().get_c() && cpu.get_cpsr().get_z(), // Unsigned lower or same
+		0xa => cpu.get_cpsr().get_n() == cpu.get_cpsr().get_v(), // Signed greater or equal
+		0xb => cpu.get_cpsr().get_n() != cpu.get_cpsr().get_v(), // Signed less than
+		0xc => !cpu.get_cpsr().get_z() && cpu.get_cpsr().get_n() == cpu.get_cpsr().get_v(), // Signed greater than
+		0xd => cpu.get_cpsr().get_z() && cpu.get_cpsr().get_n() != cpu.get_cpsr().get_v(), // Signed less or equal
 		_ => true,
 	}
 }
 
 fn decode(cpu: &mut CPU, bus: &mut MemoryBus) {
-	let pc = cpu.registers[PROGRAM_COUNTER_REGISTER];
+	let pc = cpu.get_register_value(PROGRAM_COUNTER_REGISTER) - 8;
 
 	// NOTE: Read CPU state
-	if cpu.cpsr.get_t() {
-		//let instruction = bus.read_16(pc);
+	if cpu.get_cpsr().get_t() {
+		let instruction = bus.read_16(pc);
+		print_assembly_line(disassemble_thumb(instruction), pc);
 	} else {
 		let instruction = bus.read_32(pc);
-		print_assembly_line(disassemble_arm(instruction), pc);
+//		print_assembly_line(disassemble_arm(instruction), pc);
 
 		let cond = (instruction >> (32 - 4)) as u8;
-		if (0x0fff_fff0 & instruction) == 0x012f_ff10 {
-			// Activate Thumb Mode
-			//cpu.cpsr.set_t(true);
-		} else if (0x0e00_0000 & instruction) == 0x0a00_0000 { // Branch
-			if 0x0100_0000 & instruction > 0 {
-				// Branch with Link
-				cpu.registers[LINK_REGISTER_REGISTER] = cpu.registers[PROGRAM_COUNTER_REGISTER] + 4;
-			}
+		if cond_passed(cpu, cond) {
+			if (0x0fff_fff0 & instruction) == 0x012f_ff10 {
+				let rm = cpu.get_register_value((instruction & 0x0000_000f) as u8);
+				cpu.get_mut_cpsr().set_t((rm & 0x0000_0001) != 0);
+				cpu.set_register_value(PROGRAM_COUNTER_REGISTER, rm & 0xffff_fffe);
+				return;
+			} else if (0x0e00_0000 & instruction) == 0x0a00_0000 { // Branch
+				if 0x0100_0000 & instruction > 0 {
+					// Branch with Link
+					cpu.set_register_value(LINK_REGISTER_REGISTER, cpu.get_register_value(PROGRAM_COUNTER_REGISTER) + 4);
+				}
 
-			let offset = sign_extend(0x00ff_ffff & instruction);
-			cpu.registers[PROGRAM_COUNTER_REGISTER] = (cpu.registers[PROGRAM_COUNTER_REGISTER] as i32 + 8 + (offset << 2)) as u32;
-			return;
-		} else if (0x0c00_0000 & instruction) == 0x0400_0000 {
-			if cond_passed(cpu, cond) {
+				let offset = sign_extend(0x00ff_ffff & instruction);
+				cpu.set_register_value(PROGRAM_COUNTER_REGISTER, (cpu.get_register_value(PROGRAM_COUNTER_REGISTER) as i32 + (offset << 2)) as u32);
+				return;
+			} else if (0x0fbf_0fff & instruction) == 0x010f_0000 { // MRS (PSR Transfer)
+				let r = (0x0040_0000 & instruction) > 0;
+				let rd_index = ((instruction & 0x0000_f000) >> 12) as u8;
+
+				// SPSR vs CPSR
+				if r {
+					cpu.set_register_value(rd_index, cpu.get_spsr(cpu.get_operating_mode()).get_value());
+				} else {
+					cpu.set_register_value(rd_index, cpu.get_cpsr().get_value());
+				}
+			} else if (0x0db0_f000 & instruction) == 0x0120_f000 { // MSR (PSR Transfer)
+				let i = (0x0200_0000 & instruction) > 0;
+				let f_mask = if (0x0008_0000 & instruction) > 0 { 0xff00_0000u32 } else { 0x0000_0000 };
+				let s_mask = if (0x0004_0000 & instruction) > 0 { 0x00ff_0000u32 } else { 0x0000_0000 };
+				let x_mask = if (0x0002_0000 & instruction) > 0 { 0x0000_ff00u32 } else { 0x0000_0000 };
+				let c_mask = if (0x0001_0000 & instruction) > 0 { 0x0000_00ffu32 } else { 0x0000_0000 };
+
+				let r = (0x0040_0000 & instruction) > 0;
+
+				let operand;
+				if i {
+					let rot = (0x0000_0f00 & instruction) >> 8;
+					operand = (0x0000_00ff & instruction).rotate_right(rot * 2);
+				} else {
+					operand = cpu.get_register_value((instruction & 0x0000_000f) as u8);
+				}
+
+				let byte_mask = f_mask | s_mask | x_mask | c_mask;
+
+				const STATE_MASK: u32 = 0x0000_0020;
+				const USER_MASK: u32 = 0xf000_0000;
+				const PRIV_MASK: u32 = 0x0000_00df;
+
+				let mask;
+				let psr;
+				if !r {
+					if cpu.get_operating_mode() != EOperatingMode::UserMode {
+						if (operand & STATE_MASK) != 0 {
+							panic!("UNPREDICTABLE!");
+						}
+						mask = byte_mask & (USER_MASK | PRIV_MASK);
+					} else {
+						mask = byte_mask & USER_MASK;
+					}
+
+					psr = cpu.get_mut_cpsr();
+				} else {
+					if cpu.get_operating_mode() != EOperatingMode::UserMode && cpu.get_operating_mode() != EOperatingMode::SystemMode {
+						mask = byte_mask & (USER_MASK | PRIV_MASK | STATE_MASK);
+						psr = cpu.get_mut_spsr(cpu.get_operating_mode());
+					} else {
+						panic!("UNPREDICTABLE!");
+					}
+				}
+
+				psr.set_value((psr.get_value() & !mask) | (operand & mask));
+			} else if (0x0c00_0000 & instruction) == 0x0400_0000 { // Single Data Transfer
 				let i = (0x0200_0000 & instruction) > 0;
 				let p = (0x0100_0000 & instruction) > 0;
 				let u = (0x0080_0000 & instruction) > 0;
@@ -260,12 +326,12 @@ fn decode(cpu: &mut CPU, bus: &mut MemoryBus) {
 				let w = (0x0020_0000 & instruction) > 0;
 				let l = (0x0010_0000 & instruction) > 0;
 
-				let rn_index = ((instruction & 0x000f_0000) >> 16) as usize;
-				let rn = cpu.registers[rn_index];
-				let rd_index = ((instruction & 0x0000_f000) >> 12) as usize;
+				let rn_index = ((instruction & 0x000f_0000) >> 16) as u8;
+				let rn = cpu.get_register_value(rn_index);
+				let rd_index = ((instruction & 0x0000_f000) >> 12) as u8;
 				let offset;
 				if i {
-					let rm = cpu.registers[(instruction & 0x0000_000f) as usize];
+					let rm = cpu.get_register_value((instruction & 0x0000_000f) as u8);
 					let shift_type: EShiftType = FromPrimitive::from_u32((instruction & 0x0000_0060) >> 0).unwrap();
 					let shift = (0x0000_0f80 & instruction) >> 7;
 
@@ -294,7 +360,7 @@ fn decode(cpu: &mut CPU, bus: &mut MemoryBus) {
 							}
 							EShiftType::ROR => {
 								if shift == 0 {
-									offset = ((cpu.cpsr.get_c() as u32) << 31) | (rm >> 1);
+									offset = ((cpu.get_cpsr().get_c() as u32) << 31) | (rm >> 1);
 								} else {
 									offset = rm.rotate_right(shift);
 								}
@@ -320,200 +386,482 @@ fn decode(cpu: &mut CPU, bus: &mut MemoryBus) {
 
 				if b {
 					if l {
-						cpu.registers[rd_index] = bus.read_8(address) as u32;
-					}
-					else {
-						bus.write_8(address, cpu.registers[rd_index] as u8);
+						cpu.set_register_value(rd_index, bus.read_8(address) as u32);
+					} else {
+						bus.write_8(address, cpu.get_register_value(rd_index) as u8);
 					}
 				} else {
 					if l {
-						cpu.registers[rd_index] = bus.read_32(address) as u32;
-					}
-					else {
-						bus.write_32(address, cpu.registers[rd_index]);
+						cpu.set_register_value(rd_index, bus.read_32(address) as u32);
+					} else {
+						bus.write_32(address, cpu.get_register_value(rd_index));
 					}
 				}
 
 				// Pre Indexed
 				if p && w {
-					cpu.registers[rn_index] = address;
+					cpu.set_register_value(rn_index, address);
 				} else if !p {
 					// Post Indexed
 					if w {
 						// TODO: User mode!!!
 					}
 
-					cpu.registers[rn_index] = if u {
+					let new_address = if u {
 						rn + offset
 					} else {
 						rn - offset
 					};
+					cpu.set_register_value(rn_index, new_address);
 				}
-			}
-		} else if (0x0c00_0000 & instruction) == 0x0000_0000 {
-			let i = (0x0200_0000 & instruction) > 0;
-			let s = (0x0010_0000 & instruction) > 0;
-			let rn = cpu.registers[((instruction & 0x000f_0000) >> 16) as usize];
-			let rd_index = ((instruction & 0x0000_f000) >> 12) as usize;
+			} else if (0x0c00_0000 & instruction) == 0x0000_0000 { // ALU
+				let i = (0x0200_0000 & instruction) > 0;
+				let s = (0x0010_0000 & instruction) > 0;
+				let rn = cpu.get_register_value(((instruction & 0x000f_0000) >> 16) as u8);
+				let rd_index = ((instruction & 0x0000_f000) >> 12) as u8;
 
-			let shifter_operand;
-			let shifter_carry_out;
-			if i {
-				let rot = (0x0000_0f00 & instruction) >> 8;
-				shifter_operand = (0x0000_00ff & instruction).rotate_right(rot * 2);
+				let shifter_operand;
+				let shifter_carry_out;
+				if i {
+					let rot = (0x0000_0f00 & instruction) >> 8;
+					shifter_operand = (0x0000_00ff & instruction).rotate_right(rot * 2);
 
-				if rot == 0 {
-					shifter_carry_out = cpu.cpsr.get_c();
+					if rot == 0 {
+						shifter_carry_out = cpu.get_cpsr().get_c();
+					} else {
+						shifter_carry_out = (shifter_operand & 0x800_0000) > 0;
+					}
 				} else {
-					shifter_carry_out = (shifter_operand & 0x800_0000) > 0;
-				}
-			} else {
-				let rm = cpu.registers[(instruction & 0x0000_000f) as usize];
-				let r = (instruction & 0x0000_0010) > 0;
-				let shift_type: EShiftType = FromPrimitive::from_u32((instruction & 0x0000_0060) >> 5).unwrap();
-				if r {
-					let rs = cpu.registers[((0x0000_0f00 & instruction) >> 8) as usize] & 0x0000_00ff;
+					let rm = cpu.get_register_value((instruction & 0x0000_000f) as u8);
+					let r = (instruction & 0x0000_0010) > 0;
+					let shift_type: EShiftType = FromPrimitive::from_u32((instruction & 0x0000_0060) >> 5).unwrap();
+					if r {
+						let rs = cpu.get_register_value(((0x0000_0f00 & instruction) >> 8) as u8) & 0x0000_00ff;
 
-					match shift_type {
-						EShiftType::LSL => {
-							if rs == 0 {
-								shifter_operand = rm;
-								shifter_carry_out = cpu.cpsr.get_c();
-							} else if rs < 32 {
-								shifter_operand = rm << rs;
-								shifter_carry_out = rm.view_bits::<Lsb0>()[32 - rs as usize];
-							} else if rs == 32 {
-								shifter_operand = 0;
-								shifter_carry_out = (rm & 0x0000_0001) > 0;
-							} else {
-								shifter_operand = 0;
-								shifter_carry_out = false;
-							}
-						}
-						EShiftType::LSR => {
-							if rs == 0 {
-								shifter_operand = rm;
-								shifter_carry_out = cpu.cpsr.get_c();
-							} else if rs < 32 {
-								shifter_operand = rm >> rs;
-								shifter_carry_out = rm.view_bits::<Lsb0>()[(rs - 1) as usize];
-							} else if rs == 32 {
-								shifter_operand = 0;
-								shifter_carry_out = (rm & 0x8000_0000) > 0;
-							} else {
-								shifter_operand = 0;
-								shifter_carry_out = false;
-							}
-						}
-						EShiftType::ASR => {
-							if rs == 0 {
-								shifter_operand = rm;
-								shifter_carry_out = cpu.cpsr.get_c();
-							} else if rs < 32 {
-								shifter_operand = rm.signed_shr(rs);
-								shifter_carry_out = rm.view_bits::<Lsb0>()[(rs - 1) as usize];
-							} else {
-								if (rm & 0x8000_0000) == 0 {
+						match shift_type {
+							EShiftType::LSL => {
+								if rs == 0 {
+									shifter_operand = rm;
+									shifter_carry_out = cpu.get_cpsr().get_c();
+								} else if rs < 32 {
+									shifter_operand = rm << rs;
+									shifter_carry_out = rm.view_bits::<Lsb0>()[32 - rs as usize];
+								} else if rs == 32 {
 									shifter_operand = 0;
+									shifter_carry_out = (rm & 0x0000_0001) > 0;
 								} else {
-									shifter_operand = 0xffff_ffff;
+									shifter_operand = 0;
+									shifter_carry_out = false;
 								}
-								shifter_carry_out = (rm & 0x8000_0000) > 0;
+							}
+							EShiftType::LSR => {
+								if rs == 0 {
+									shifter_operand = rm;
+									shifter_carry_out = cpu.get_cpsr().get_c();
+								} else if rs < 32 {
+									shifter_operand = rm >> rs;
+									shifter_carry_out = rm.view_bits::<Lsb0>()[(rs - 1) as usize];
+								} else if rs == 32 {
+									shifter_operand = 0;
+									shifter_carry_out = (rm & 0x8000_0000) > 0;
+								} else {
+									shifter_operand = 0;
+									shifter_carry_out = false;
+								}
+							}
+							EShiftType::ASR => {
+								if rs == 0 {
+									shifter_operand = rm;
+									shifter_carry_out = cpu.get_cpsr().get_c();
+								} else if rs < 32 {
+									shifter_operand = rm.signed_shr(rs);
+									shifter_carry_out = rm.view_bits::<Lsb0>()[(rs - 1) as usize];
+								} else {
+									if (rm & 0x8000_0000) == 0 {
+										shifter_operand = 0;
+									} else {
+										shifter_operand = 0xffff_ffff;
+									}
+									shifter_carry_out = (rm & 0x8000_0000) > 0;
+								}
+							}
+							EShiftType::ROR => {
+								let rs_shift = rs & 0x1f;
+								if rs == 0 {
+									shifter_operand = rm;
+									shifter_carry_out = cpu.get_cpsr().get_c();
+								} else if rs_shift == 0 {
+									shifter_operand = rm;
+									shifter_carry_out = (rm & 0x8000_0000) > 0;
+								} else {
+									shifter_operand = rm.rotate_right(rs_shift);
+									shifter_carry_out = rm.view_bits::<Lsb0>()[(rs_shift - 1) as usize];
+								}
 							}
 						}
-						EShiftType::ROR => {
-							let rs_shift = rs & 0x1f;
-							if rs == 0 {
-								shifter_operand = rm;
-								shifter_carry_out = cpu.cpsr.get_c();
-							} else if rs_shift == 0 {
-								shifter_operand = rm;
-								shifter_carry_out = (rm & 0x8000_0000) > 0;
-							} else {
-								shifter_operand = rm.rotate_right(rs_shift);
-								shifter_carry_out = rm.view_bits::<Lsb0>()[(rs_shift - 1) as usize];
+					} else {
+						let shift = (0x0000_0f80 & instruction) >> 7;
+						match shift_type {
+							EShiftType::LSL => {
+								if shift == 0 {
+									shifter_operand = rm;
+									shifter_carry_out = cpu.get_cpsr().get_c();
+								} else {
+									shifter_operand = rm << shift;
+									shifter_carry_out = rm.view_bits::<Lsb0>()[32 - shift as usize];
+								}
+							}
+							EShiftType::LSR => {
+								if shift == 0 {
+									shifter_operand = 0;
+									shifter_carry_out = (rm & 0x8000_0000) > 0;
+								} else {
+									shifter_operand = rm >> shift;
+									shifter_carry_out = rm.view_bits::<Lsb0>()[(shift - 1) as usize];
+								}
+							}
+							EShiftType::ASR => {
+								if shift == 0 {
+									if (rm & 0x8000_0000) == 0 {
+										shifter_operand = 0;
+									} else {
+										shifter_operand = 0xffff_ffff;
+									}
+									shifter_carry_out = (rm & 0x8000_0000) > 0;
+								} else {
+									shifter_operand = rm.signed_shr(shift);
+									shifter_carry_out = rm.view_bits::<Lsb0>()[(shift - 1) as usize];
+								}
+							}
+							EShiftType::ROR => {
+								if shift == 0 {
+									shifter_operand = ((cpu.get_cpsr().get_c() as u32) << 31) | (rm >> 1);
+									shifter_carry_out = (rm & 0x0000_0001) > 0;
+								} else {
+									shifter_operand = rm.rotate_right(shift);
+									shifter_carry_out = rm.view_bits::<Lsb0>()[(shift - 1) as usize];
+								}
 							}
 						}
 					}
-				} else {
-					let shift = (0x0000_0f80 & instruction) >> 7;
-					match shift_type {
-						EShiftType::LSL => {
-							if shift == 0 {
-								shifter_operand = rm;
-								shifter_carry_out = cpu.cpsr.get_c();
-							} else {
-								shifter_operand = rm << shift;
-								shifter_carry_out = rm.view_bits::<Lsb0>()[32 - shift as usize];
-							}
-						}
-						EShiftType::LSR => {
-							if shift == 0 {
-								shifter_operand = 0;
-								shifter_carry_out = (rm & 0x8000_0000) > 0;
-							} else {
-								shifter_operand = rm >> shift;
-								shifter_carry_out = rm.view_bits::<Lsb0>()[(shift - 1) as usize];
-							}
-						}
-						EShiftType::ASR => {
-							if shift == 0 {
-								if (rm & 0x8000_0000) == 0 {
-									shifter_operand = 0;
-								} else {
-									shifter_operand = 0xffff_ffff;
-								}
-								shifter_carry_out = (rm & 0x8000_0000) > 0;
-							} else {
-								shifter_operand = rm.signed_shr(shift);
-								shifter_carry_out = rm.view_bits::<Lsb0>()[(shift - 1) as usize];
-							}
-						}
-						EShiftType::ROR => {
-							if shift == 0 {
-								shifter_operand = ((cpu.cpsr.get_c() as u32) << 31) | (rm >> 1);
-								shifter_carry_out = (rm & 0x0000_0001) > 0;
-							} else {
-								shifter_operand = rm.rotate_right(shift);
-								shifter_carry_out = rm.view_bits::<Lsb0>()[(shift - 1) as usize];
-							}
-						}
-					}
-				}
-			};
+				};
 
-			if cond_passed(cpu, cond) {
 				match (0x01e0_0000 & instruction) >> 21 {
+					// AND
+					0x0 => {
+						let alu_out = rn & shifter_operand;
+						cpu.set_register_value(rd_index, alu_out);
+
+						if s {
+							if rd_index == PROGRAM_COUNTER_REGISTER {
+								if cpu.get_operating_mode() != EOperatingMode::UserMode && cpu.get_operating_mode() != EOperatingMode::SystemMode {
+									let spsr = cpu.get_spsr(cpu.get_operating_mode()).get_value();
+									cpu.get_mut_cpsr().set_value(spsr);
+								} else {
+									panic!("UNPREDICTABLE!");
+								}
+							} else {
+								cpu.get_mut_cpsr().set_n((alu_out & 0x800_0000) > 0);
+								cpu.get_mut_cpsr().set_z(alu_out == 0);
+								cpu.get_mut_cpsr().set_c(shifter_carry_out);
+							}
+						}
+					}
+					// EOR
+					0x1 => {
+						let alu_out = rn ^ shifter_operand;
+						cpu.set_register_value(rd_index, alu_out);
+
+						if s {
+							if rd_index == PROGRAM_COUNTER_REGISTER {
+								if cpu.get_operating_mode() != EOperatingMode::UserMode && cpu.get_operating_mode() != EOperatingMode::SystemMode {
+									let spsr = cpu.get_spsr(cpu.get_operating_mode()).get_value();
+									cpu.get_mut_cpsr().set_value(spsr);
+								} else {
+									panic!("UNPREDICTABLE!");
+								}
+							} else {
+								cpu.get_mut_cpsr().set_n((alu_out & 0x800_0000) > 0);
+								cpu.get_mut_cpsr().set_z(alu_out == 0);
+								cpu.get_mut_cpsr().set_c(shifter_carry_out);
+							}
+						}
+					}
+					// SUB
+					0x2 => {
+						// Borrowed if carries bits over
+						let (alu_out, borrowed) = rn.overflowing_sub(shifter_operand);
+						cpu.set_register_value(rd_index, alu_out);
+
+						if s {
+							if rd_index == PROGRAM_COUNTER_REGISTER {
+								if cpu.get_operating_mode() != EOperatingMode::UserMode && cpu.get_operating_mode() != EOperatingMode::SystemMode {
+									let spsr = cpu.get_spsr(cpu.get_operating_mode()).get_value();
+									cpu.get_mut_cpsr().set_value(spsr);
+								} else {
+									panic!("UNPREDICTABLE!");
+								}
+							} else {
+								// Overflow is sign changes
+								let overflow = (rn as i32).is_positive() != (shifter_operand as i32).is_positive() && (rn as i32).is_positive() != (alu_out as i32).is_positive();
+
+								cpu.get_mut_cpsr().set_n((alu_out & 0x800_0000) > 0);
+								cpu.get_mut_cpsr().set_z(alu_out == 0);
+								cpu.get_mut_cpsr().set_c(!borrowed);
+								cpu.get_mut_cpsr().set_v(overflow);
+							}
+						}
+					}
+					// RSB
+					0x3 => {
+						// Borrowed if carries bits over
+						let (alu_out, borrowed) = shifter_operand.overflowing_add(rn);
+						cpu.set_register_value(rd_index, alu_out);
+
+						if s {
+							if rd_index == PROGRAM_COUNTER_REGISTER {
+								if cpu.get_operating_mode() != EOperatingMode::UserMode && cpu.get_operating_mode() != EOperatingMode::SystemMode {
+									let spsr = cpu.get_spsr(cpu.get_operating_mode()).get_value();
+									cpu.get_mut_cpsr().set_value(spsr);
+								} else {
+									panic!("UNPREDICTABLE!");
+								}
+							} else {
+								// Overflow if sign changes
+								let overflow = (shifter_operand as i32).is_positive() != (rn as i32).is_positive() && (shifter_operand as i32).is_positive() != (alu_out as i32).is_positive();
+
+								cpu.get_mut_cpsr().set_n((alu_out & 0x800_0000) > 0);
+								cpu.get_mut_cpsr().set_z(alu_out == 0);
+								cpu.get_mut_cpsr().set_c(!borrowed);
+								cpu.get_mut_cpsr().set_v(overflow);
+							}
+						}
+					}
+					//ADD
+					0x4 => {
+						// Borrowed if carries bits over
+						let (alu_out, borrowed) = rn.overflowing_add(shifter_operand);
+						cpu.set_register_value(rd_index, alu_out);
+
+						if s {
+							if rd_index == PROGRAM_COUNTER_REGISTER {
+								if cpu.get_operating_mode() != EOperatingMode::UserMode && cpu.get_operating_mode() != EOperatingMode::SystemMode {
+									let spsr = cpu.get_spsr(cpu.get_operating_mode()).get_value();
+									cpu.get_mut_cpsr().set_value(spsr);
+								} else {
+									panic!("UNPREDICTABLE!");
+								}
+							} else {
+								// Overflow if sign changes
+								let overflow = (rn as i32).is_positive() == (shifter_operand as i32).is_positive() && (rn as i32).is_positive() != (alu_out as i32).is_positive();
+
+								cpu.get_mut_cpsr().set_n((alu_out & 0x800_0000) > 0);
+								cpu.get_mut_cpsr().set_z(alu_out == 0);
+								cpu.get_mut_cpsr().set_c(borrowed);
+								cpu.get_mut_cpsr().set_v(overflow);
+							}
+						}
+					}
+					// ADC
+					0x5 => {
+						// Borrowed if carries bits over
+						let (alu_out_first, borrowed_first) = rn.overflowing_add(shifter_operand);
+						let c = cpu.get_cpsr().get_c() as u32;
+						let (alu_out, borrowed_second) = alu_out_first.overflowing_add(c);
+						let borrowed = borrowed_first || borrowed_second;
+						cpu.set_register_value(rd_index, alu_out);
+
+						if s {
+							if rd_index == PROGRAM_COUNTER_REGISTER {
+								if cpu.get_operating_mode() != EOperatingMode::UserMode && cpu.get_operating_mode() != EOperatingMode::SystemMode {
+									let spsr = cpu.get_spsr(cpu.get_operating_mode()).get_value();
+									cpu.get_mut_cpsr().set_value(spsr);
+								} else {
+									panic!("UNPREDICTABLE!");
+								}
+							} else {
+								// Overflow if sign changes
+								let overflow = ((rn as i32).is_positive() == (shifter_operand as i32).is_positive() && (rn as i32).is_positive() != (alu_out_first as i32).is_positive())
+									|| ((alu_out_first as i32).is_positive() == (c as i32).is_positive() && (alu_out_first as i32).is_positive() != (alu_out as i32).is_positive());
+
+								cpu.get_mut_cpsr().set_n((alu_out & 0x800_0000) > 0);
+								cpu.get_mut_cpsr().set_z(alu_out == 0);
+								cpu.get_mut_cpsr().set_c(borrowed);
+								cpu.get_mut_cpsr().set_v(overflow);
+							}
+						}
+					}
+					// SBC
+					0x6 => {
+						// Borrowed if carries bits over
+						let (alu_out_first, borrowed_first) = rn.overflowing_sub(shifter_operand);
+						let c = !cpu.get_cpsr().get_c() as u32;
+						let (alu_out, borrowed_second) = alu_out_first.overflowing_sub(c);
+						let borrowed = borrowed_first || borrowed_second;
+						cpu.set_register_value(rd_index, alu_out);
+
+						if s {
+							if rd_index == PROGRAM_COUNTER_REGISTER {
+								if cpu.get_operating_mode() != EOperatingMode::UserMode && cpu.get_operating_mode() != EOperatingMode::SystemMode {
+									let spsr = cpu.get_spsr(cpu.get_operating_mode()).get_value();
+									cpu.get_mut_cpsr().set_value(spsr);
+								} else {
+									panic!("UNPREDICTABLE!");
+								}
+							} else {
+								// Overflow if sign changes
+								let overflow = ((rn as i32).is_positive() != (shifter_operand as i32).is_positive() && (rn as i32).is_positive() != (alu_out_first as i32).is_positive())
+									|| ((alu_out_first as i32).is_positive() != (c as i32).is_positive() && (alu_out_first as i32).is_positive() != (alu_out as i32).is_positive());
+
+								cpu.get_mut_cpsr().set_n((alu_out & 0x800_0000) > 0);
+								cpu.get_mut_cpsr().set_z(alu_out == 0);
+								cpu.get_mut_cpsr().set_c(!borrowed);
+								cpu.get_mut_cpsr().set_v(overflow);
+							}
+						}
+					}
+					// RSC
+					0x7 => {
+						// Borrowed if carries bits over
+						let (alu_out_first, borrowed_first) = shifter_operand.overflowing_sub(rn);
+						let c = !cpu.get_cpsr().get_c() as u32;
+						let (alu_out, borrowed_second) = alu_out_first.overflowing_sub(c);
+						let borrowed = borrowed_first || borrowed_second;
+						cpu.set_register_value(rd_index, alu_out);
+
+						if s {
+							if rd_index == PROGRAM_COUNTER_REGISTER {
+								if cpu.get_operating_mode() != EOperatingMode::UserMode && cpu.get_operating_mode() != EOperatingMode::SystemMode {
+									let spsr = cpu.get_spsr(cpu.get_operating_mode()).get_value();
+									cpu.get_mut_cpsr().set_value(spsr);
+								} else {
+									panic!("UNPREDICTABLE!");
+								}
+							} else {
+								// Overflow if sign changes
+								let overflow = ((shifter_operand as i32).is_positive() != (rn as i32).is_positive() && (shifter_operand as i32).is_positive() != (alu_out_first as i32).is_positive())
+									|| ((alu_out_first as i32).is_positive() != (c as i32).is_positive() && (alu_out_first as i32).is_positive() != (alu_out as i32).is_positive());
+
+								cpu.get_mut_cpsr().set_n((alu_out & 0x800_0000) > 0);
+								cpu.get_mut_cpsr().set_z(alu_out == 0);
+								cpu.get_mut_cpsr().set_c(!borrowed);
+								cpu.get_mut_cpsr().set_v(overflow);
+							}
+						}
+					}
+					// TST
+					0x8 => {
+						let alu_out = rn & shifter_operand;
+
+						cpu.get_mut_cpsr().set_n((alu_out & 0x800_0000) > 0);
+						cpu.get_mut_cpsr().set_z(alu_out == 0);
+						cpu.get_mut_cpsr().set_c(shifter_carry_out);
+					}
+					// TEQ
+					0x9 => {
+						let alu_out = rn ^ shifter_operand;
+
+						cpu.get_mut_cpsr().set_n((alu_out & 0x800_0000) > 0);
+						cpu.get_mut_cpsr().set_z(alu_out == 0);
+						cpu.get_mut_cpsr().set_c(shifter_carry_out);
+					}
 					// CMP
 					0xa => {
 						// Borrowed if carries bits over
-						let (result, borrowed) = rn.overflowing_sub(shifter_operand as u32);
+						let (alu_out, borrowed) = rn.overflowing_sub(shifter_operand);
 						// Overflow is sign changes
-						let overflow = (rn as i32).signum() != (shifter_operand as i32).signum() && (rn as i32).signum() != (result as i32).signum();
+						let overflow = (rn as i32).is_positive() != (shifter_operand as i32).is_positive() && (rn as i32).is_positive() != (alu_out as i32).is_positive();
 
-						cpu.cpsr.set_n((result & 0x800_0000) > 0);
-						cpu.cpsr.set_z(result == 0);
-						cpu.cpsr.set_c(!borrowed);
-						cpu.cpsr.set_v(overflow);
+						cpu.get_mut_cpsr().set_n((alu_out & 0x800_0000) > 0);
+						cpu.get_mut_cpsr().set_z(alu_out == 0);
+						cpu.get_mut_cpsr().set_c(!borrowed);
+						cpu.get_mut_cpsr().set_v(overflow);
 					},
+					// CMN
+					0xb => {
+						// Borrowed if carries bits over
+						let (alu_out, borrowed) = rn.overflowing_add(shifter_operand);
+						// Overflow is sign changes
+						let overflow = (rn as i32).is_positive() == (shifter_operand as i32).is_positive() && (rn as i32).is_positive() != (alu_out as i32).is_positive();
+
+						cpu.get_mut_cpsr().set_n((alu_out & 0x800_0000) > 0);
+						cpu.get_mut_cpsr().set_z(alu_out == 0);
+						cpu.get_mut_cpsr().set_c(borrowed);
+						cpu.get_mut_cpsr().set_v(overflow);
+					},
+					// ORR
+					0xc => {
+						cpu.set_register_value(rd_index, rn | shifter_operand);
+
+						if s {
+							if rd_index == PROGRAM_COUNTER_REGISTER {
+								if cpu.get_operating_mode() != EOperatingMode::UserMode && cpu.get_operating_mode() != EOperatingMode::SystemMode {
+									let spsr = cpu.get_spsr(cpu.get_operating_mode()).get_value();
+									cpu.get_mut_cpsr().set_value(spsr);
+								} else {
+									panic!("UNPREDICTABLE!");
+								}
+							} else {
+								let rd = cpu.get_register_value(rd_index);
+								cpu.get_mut_cpsr().set_n((rd & 0x800_0000) > 0);
+								cpu.get_mut_cpsr().set_z(rd == 0);
+								cpu.get_mut_cpsr().set_c(shifter_carry_out);
+							}
+						}
+					}
 					// MOV
 					0xd => {
-						cpu.registers[rd_index] = shifter_operand;
+						cpu.set_register_value(rd_index, shifter_operand);
 
-						let rd = cpu.registers[rd_index];
-						if s && rd == PROGRAM_COUNTER_REGISTER as u32 {
-							match cpu.cpsr.get_mode_bits().load_le() {
-								FIQ_MODE => cpu.cpsr = cpu.spsr_fiq.clone(),
-								IRQ_MODE => cpu.cpsr = cpu.spsr_irq.clone(),
-								SUPERVISOR_MODE => cpu.cpsr = cpu.spsr_svc.clone(),
-								ABORT_MODE => cpu.cpsr = cpu.spsr_abt.clone(),
-								UNDEFINED_MODE => cpu.cpsr = cpu.spsr_und.clone(),
-								_ => {}
+						let rd = cpu.get_register_value(rd_index);
+						if s && rd_index == PROGRAM_COUNTER_REGISTER {
+							if cpu.get_operating_mode() != EOperatingMode::UserMode && cpu.get_operating_mode() != EOperatingMode::SystemMode {
+								*cpu.get_mut_cpsr() = cpu.get_spsr(cpu.get_operating_mode()).clone();
 							}
 						} else if s {
-							cpu.cpsr.set_n((rd & 0x800_0000) > 0);
-							cpu.cpsr.set_z(rd == 0);
-							cpu.cpsr.set_c(shifter_carry_out);
+							cpu.get_mut_cpsr().set_n((rd & 0x800_0000) > 0);
+							cpu.get_mut_cpsr().set_z(rd == 0);
+							cpu.get_mut_cpsr().set_c(shifter_carry_out);
+						}
+					}
+					// BIC
+					0xe => {
+						let alu_out = rn & !shifter_operand;
+						cpu.set_register_value(rd_index, alu_out);
+
+						if s {
+							if rd_index == PROGRAM_COUNTER_REGISTER {
+								if cpu.get_operating_mode() != EOperatingMode::UserMode && cpu.get_operating_mode() != EOperatingMode::SystemMode {
+									let spsr = cpu.get_spsr(cpu.get_operating_mode()).get_value();
+									cpu.get_mut_cpsr().set_value(spsr);
+								} else {
+									panic!("UNPREDICTABLE!");
+								}
+							} else {
+								cpu.get_mut_cpsr().set_n((alu_out & 0x800_0000) > 0);
+								cpu.get_mut_cpsr().set_z(alu_out == 0);
+								cpu.get_mut_cpsr().set_c(shifter_carry_out);
+							}
+						}
+					}
+					// MVN
+					0xf => {
+						let alu_out = !shifter_operand;
+						cpu.set_register_value(rd_index, alu_out);
+
+						if s {
+							if rd_index == PROGRAM_COUNTER_REGISTER {
+								if cpu.get_operating_mode() != EOperatingMode::UserMode && cpu.get_operating_mode() != EOperatingMode::SystemMode {
+									let spsr = cpu.get_spsr(cpu.get_operating_mode()).get_value();
+									cpu.get_mut_cpsr().set_value(spsr);
+								} else {
+									panic!("UNPREDICTABLE!");
+								}
+							} else {
+								cpu.get_mut_cpsr().set_n((alu_out & 0x800_0000) > 0);
+								cpu.get_mut_cpsr().set_z(alu_out == 0);
+								cpu.get_mut_cpsr().set_c(shifter_carry_out);
+							}
 						}
 					}
 					_ => {}
@@ -521,7 +869,7 @@ fn decode(cpu: &mut CPU, bus: &mut MemoryBus) {
 			}
 		}
 
-		cpu.registers[PROGRAM_COUNTER_REGISTER] += 4;
+		cpu.set_register_value(PROGRAM_COUNTER_REGISTER, cpu.get_register_value(PROGRAM_COUNTER_REGISTER) - 4);
 	}
 }
 
@@ -549,7 +897,7 @@ fn disassemble_cond(cond: u8) -> &'static str {
 	}
 }
 
-fn disassemble_thumb(instruction: u16, pc: u32) -> String {
+fn disassemble_thumb(instruction: u16) -> String {
 	if (0xf800 & instruction) == 0x1800 {
 		let op = if (0x0200 & instruction) > 0 { "ADD" } else { "SUB" };
 		let i = (0x0400 & instruction) > 0;
@@ -741,7 +1089,7 @@ fn disassemble_thumb(instruction: u16, pc: u32) -> String {
 //		let lo = (instruction & 0x07ff) as u32;
 //		let offset = (hi << 12) & (lo << 1);
 //
-		return format!("BL Target: {:#X}", pc as u32 + 4 + hi);
+		return format!("BL Target: {:#X}", hi);
 	} else {
 		return format!("Missing instruction!");
 	}
@@ -780,14 +1128,14 @@ fn disassemble_arm(instruction: u32) -> String {
 		}
 
 		// TODO: Revisit params!!!
-		return format!("{}{} R{}, R{}, R{}", op, s, (instruction & 0x000f_0000) >> 16, instruction & 0x0000_000f, (instruction & 0x0000_0f00) >> 8);
+		return format!("{}{} {} R{}, R{}, R{}", op, s, disassemble_cond(cond), (instruction & 0x000f_0000) >> 16, instruction & 0x0000_000f, (instruction & 0x0000_0f00) >> 8);
 	} else if (0x0fbf_0fff & instruction) == 0x010f_0000 {
-		if (instruction & 0x0010_0000) > 0 {
-			return format!("MRS R{}, CPSR", (instruction & 0x0000_f000) >> 12, );
+		if (instruction & 0x0040_0000) > 0 {
+			return format!("MRS {} R{}, CPSR", disassemble_cond(cond), (instruction & 0x0000_f000) >> 12);
 		} else {
-			return format!("MRS R{}, SPSR", (instruction & 0x0000_f000) >> 12, );
+			return format!("MRS {} R{}, SPSR", disassemble_cond(cond), (instruction & 0x0000_f000) >> 12);
 		}
-	} else if (0x0db0_f000 & instruction) == 0x0129_f000 {
+	} else if (0x0db0_f000 & instruction) == 0x0120_f000 {
 		let mut fields = String::from("");
 		if (0x0008_000 & instruction) > 0 {
 			fields += "f";
@@ -804,11 +1152,11 @@ fn disassemble_arm(instruction: u32) -> String {
 		if fields.len() > 0 {
 			fields = String::from("_") + &*fields;
 		}
-		let psr = if (instruction & 0x0010_0000) > 0 { "CPSR" } else { "SPSR" };
+		let psr = if (instruction & 0x0040_0000) > 0 { "SPSR" } else { "CPSR" };
 		if (instruction & 0x0200_0000) > 0 {
-			return format!("MSR {}{}, #{:#X}", psr, fields, instruction & 0x0000_00ff);
+			return format!("MSR {} {}{}, #{:#X}", disassemble_cond(cond), psr, fields, instruction & 0x0000_00ff);
 		} else {
-			return format!("MSR {}{}, R{}", psr, fields, instruction & 0x0000_00ff);
+			return format!("MSR {} {}{}, R{}", disassemble_cond(cond), psr, fields, instruction & 0x0000_00ff);
 		}
 	} else if (0x0c00_0000 & instruction) == 0x0400_0000 {
 		let p = (0x0100_0000 & instruction) > 0;
@@ -836,7 +1184,7 @@ fn disassemble_arm(instruction: u32) -> String {
 			}
 		}
 
-		return format!("{}{}{} R{}, {}", l, b, t, (instruction & 0x0000_f000) >> 12, address);
+		return format!("{}{}{} {} R{}, {}", l, b, t, disassemble_cond(cond), (instruction & 0x0000_f000) >> 12, address);
 	} else if (0x0e40_0F90 & instruction) == 0x0000_0090 {
 		let l = if (0x0010_0000 & instruction) > 0 { "LDR" } else { "STR" };
 		let op;
@@ -850,7 +1198,7 @@ fn disassemble_arm(instruction: u32) -> String {
 			panic!("ERROR!!!");
 		}
 
-		return format!("{}{} R{}", l, op, instruction & 0x0000_000f);
+		return format!("{}{} {} R{}", l, op, disassemble_cond(cond), instruction & 0x0000_000f);
 	} else if (0x0e40_0090 & instruction) == 0x0040_0090 {
 		let l = if (0x0010_0000 & instruction) > 0 { "LDR" } else { "STR" };
 		let op;
@@ -864,7 +1212,7 @@ fn disassemble_arm(instruction: u32) -> String {
 			panic!("ERROR!!!");
 		}
 
-		return format!("{}{} #{:#X}", l, op, (instruction & 0x0000_0f00) >> 4 | instruction & 0x0000_000f);
+		return format!("{}{} {} #{:#X}", l, op, disassemble_cond(cond), (instruction & 0x0000_0f00) >> 4 | instruction & 0x0000_000f);
 	} else if (0x0e00_0000 & instruction) == 0x0800_0000 {
 		let l = if (0x0010_0000 & instruction) > 0 { "LDM" } else { "STM" };
 		let w = if (0x0020_0000 & instruction) > 0 { "!" } else { "" };
@@ -881,7 +1229,7 @@ fn disassemble_arm(instruction: u32) -> String {
 		}
 		regs += " }";
 
-		return format!("{}{}{} R{}{}, {}{}", l, u, p, (instruction & 0x000f_0000) >> 16, w, regs, s);
+		return format!("{}{}{} {} R{}{}, {}{}", l, u, p, disassemble_cond(cond), (instruction & 0x000f_0000) >> 16, w, regs, s);
 	} else if (0x0f00_0000 & instruction) == 0x0f00_0000 {
 		return format!("SWI");
 	} else if (0x0c00_0000 & instruction) == 0x0000_0000 {
