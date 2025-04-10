@@ -3,29 +3,9 @@ use bitvec::prelude::BitView;
 use num_traits::{FromPrimitive, PrimInt};
 
 use crate::arm7tdmi::cpu::{CPU, LINK_REGISTER_REGISTER, PROGRAM_COUNTER_REGISTER};
-use crate::arm7tdmi::EShiftType;
+use crate::arm7tdmi::{cond_passed, EShiftType};
 use crate::arm7tdmi::{sign_extend, EOperatingMode};
 use crate::memory::MemoryBus;
-
-fn cond_passed(cpu: &CPU, cond: u8) -> bool {
-	match cond {
-		0x0 => cpu.get_cpsr().get_z(),                                                      // Equal (Zero)
-		0x1 => !cpu.get_cpsr().get_z(),                                                     // Not Equal (Nonzero)
-		0x2 => cpu.get_cpsr().get_c(),                                                      // Carry set
-		0x3 => !cpu.get_cpsr().get_c(),                                                     // Carry cleared
-		0x4 => cpu.get_cpsr().get_n(),                                                      // Signed negative
-		0x5 => !cpu.get_cpsr().get_n(),                                                     // Signed positive or zero
-		0x6 => cpu.get_cpsr().get_v(),                                                      // Signed overflow
-		0x7 => !cpu.get_cpsr().get_v(),                                                     // Signed no overflow
-		0x8 => cpu.get_cpsr().get_c() && !cpu.get_cpsr().get_z(),                           // Unsigned higher
-		0x9 => !cpu.get_cpsr().get_c() && cpu.get_cpsr().get_z(),                           // Unsigned lower or same
-		0xa => cpu.get_cpsr().get_n() == cpu.get_cpsr().get_v(),                            // Signed greater or equal
-		0xb => cpu.get_cpsr().get_n() != cpu.get_cpsr().get_v(),                            // Signed less than
-		0xc => !cpu.get_cpsr().get_z() && cpu.get_cpsr().get_n() == cpu.get_cpsr().get_v(), // Signed greater than
-		0xd => cpu.get_cpsr().get_z() && cpu.get_cpsr().get_n() != cpu.get_cpsr().get_v(),  // Signed less or equal
-		_ => true,
-	}
-}
 
 pub fn operate_arm(cpu: &mut CPU, bus: &mut MemoryBus, instruction: u32) {
 	let cond = (instruction >> (32 - 4)) as u8;
@@ -42,8 +22,11 @@ pub fn operate_arm(cpu: &mut CPU, bus: &mut MemoryBus, instruction: u32) {
 				cpu.set_register_value(LINK_REGISTER_REGISTER, cpu.get_register_value(PROGRAM_COUNTER_REGISTER) + 4);
 			}
 
-			let offset = sign_extend(0x00ff_ffff & instruction);
-			cpu.set_register_value(PROGRAM_COUNTER_REGISTER, (cpu.get_register_value(PROGRAM_COUNTER_REGISTER) as i32 + (offset << 2)) as u32);
+			let offset = sign_extend(0x00ff_ffff & instruction, 24);
+			cpu.set_register_value(
+				PROGRAM_COUNTER_REGISTER,
+				(cpu.get_register_value(PROGRAM_COUNTER_REGISTER) as i32).wrapping_add((offset << 2)) as u32,
+			);
 			return;
 		} else if (0x0fbf_0fff & instruction) == 0x010f_0000 {
 			// MRS (PSR Transfer)
@@ -193,7 +176,7 @@ pub fn operate_arm(cpu: &mut CPU, bus: &mut MemoryBus, instruction: u32) {
 					// TODO: User mode!!!
 				}
 
-				let new_address = if u { rn + offset } else { rn - offset };
+				let new_address = if u { rn.wrapping_add(offset) } else { rn.wrapping_sub(offset) };
 				cpu.set_register_value(rn_index, new_address);
 			}
 		} else if (0x0c00_0000 & instruction) == 0x0000_0000 {

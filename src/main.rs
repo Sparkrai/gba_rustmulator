@@ -39,6 +39,7 @@ fn main() {
 		let mut show_demo_window = false;
 
 		let mut debug_mode = true;
+		let mut breakpoint_set = false;
 		let mut current_inspected_address = 0;
 
 		system.main_loop(move |_exit, ui| {
@@ -63,7 +64,15 @@ fn main() {
 			}
 
 			if show_memory_debug_window {
-				build_memory_debug_window(&mut cpu, &mut bus, &mut show_memory_debug_window, &mut current_inspected_address, &mut debug_mode, &ui);
+				build_memory_debug_window(
+					&mut cpu,
+					&mut bus,
+					&mut show_memory_debug_window,
+					&mut current_inspected_address,
+					&mut debug_mode,
+					&mut breakpoint_set,
+					&ui,
+				);
 			}
 
 			if show_demo_window {

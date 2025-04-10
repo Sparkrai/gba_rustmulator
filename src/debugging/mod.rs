@@ -7,33 +7,57 @@ use crate::memory::MemoryBus;
 
 mod disassembling;
 
-pub fn build_memory_debug_window(cpu: &mut CPU, bus: &mut MemoryBus, show_memory_window: &mut bool, address: &mut u32, debug_mode: &mut bool, ui: &&mut Ui) {
+pub fn build_memory_debug_window(
+	cpu: &mut CPU,
+	bus: &mut MemoryBus,
+	show_memory_window: &mut bool,
+	address: &mut u32,
+	debug_mode: &mut bool,
+	breakpoint_set: &mut bool,
+	ui: &&mut Ui,
+) {
 	Window::new(im_str!("Current Memory"))
 		.size([600.0, 500.0], Condition::FirstUseEver)
 		.position([750.0, 100.0], Condition::FirstUseEver)
 		.opened(show_memory_window)
 		.build(ui, || {
+			if !*debug_mode {
+				if *breakpoint_set {
+					if *address == cpu.get_current_pc() {
+						*debug_mode = true;
+					}
+				} else {
+					*address = cpu.get_current_pc();
+				}
+			}
+
 			let pc_offset = if cpu.get_cpsr().get_t() { 4 } else { 8 };
 
 			ui.text("Current instruction highlighted");
-			if !*debug_mode {
-				*address = cpu.get_current_pc();
-			}
 
-			if ui.button(im_str!("Step"), [0.0, 0.0]) {
+			if ui.button(im_str!("Step"), [0.0, 0.0]) || ui.is_key_down(Key::DownArrow) {
 				decode(cpu, bus);
-				*address = cpu.get_current_pc();
+				if !*breakpoint_set {
+					*address = cpu.get_current_pc();
+				}
 			}
 			ui.same_line(0.0);
 			ui.checkbox(im_str!("Debug"), debug_mode);
 
-			let mut new_address = *address as i32;
+			let mut new_address = (*address) as i32;
 			if ui.button(im_str!("Current PC"), [0.0, 0.0]) {
-				*address = cpu.get_current_pc();
+				if !*breakpoint_set {
+					*address = cpu.get_current_pc();
+				}
 			}
 
 			ui.same_line(0.0);
 			if ui.input_int(im_str!("Address"), &mut new_address).step(4).chars_hexadecimal(true).build() {
+				*address = new_address as u32;
+			}
+
+			if ui.button(im_str!("Set/Unset Breakpoint"), [0.0, 0.0]) {
+				*breakpoint_set = !*breakpoint_set;
 				*address = new_address as u32;
 			}
 
@@ -43,7 +67,7 @@ pub fn build_memory_debug_window(cpu: &mut CPU, bus: &mut MemoryBus, show_memory
 				ui.set_column_width(0, 95.0);
 
 				const ENTRIES: i32 = 300;
-				let starting_address = address.saturating_sub(20);
+				let starting_address = (if *breakpoint_set { cpu.get_current_pc() } else { *address }).saturating_sub(20);
 				let mut list_clipper = ListClipper::new(ENTRIES).begin(&ui);
 				while list_clipper.step() {
 					for row in list_clipper.display_start()..list_clipper.display_end() {

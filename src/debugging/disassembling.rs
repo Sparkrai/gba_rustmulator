@@ -1,6 +1,6 @@
 use num_traits::FromPrimitive;
 
-use crate::arm7tdmi::EShiftType;
+use crate::arm7tdmi::{sign_extend, EShiftType};
 
 pub fn print_assembly_line(line: String, pc: u32) {
 	println!("{:#06X}| {}", pc, line)
@@ -91,7 +91,12 @@ pub fn disassemble_thumb(instruction: u16) -> String {
 			_ => panic!("ERROR!!!"),
 		}
 
-		let rd = if op == "BX" { String::from("") } else { format!("R{}, ", (instruction & 0x001c) >> 3) };
+		let rm = (instruction & 0x0078) >> 3;
+		let rd = if op == "BX" {
+			String::from("")
+		} else {
+			format!("R{}, ", (instruction & 0x0007) & ((instruction & 0x0080) >> 4))
+		};
 
 		format!("{} {}R{}", op, rd, instruction & 0x0007)
 	} else if (0xf800 & instruction) == 0x4800 {
@@ -199,11 +204,14 @@ pub fn disassemble_thumb(instruction: u16) -> String {
 			_ => panic!("ERROR!!!"),
 		}
 
-		// TODO: Interpret as signed
-		format!("{} Offset: {:#X}", op, instruction & 0x00ff)
+		let offset = sign_extend((instruction & 0x00ff), 8) << 1;
+		format!("{} Offset: {}", op, offset)
+	} else if (0xf800 & instruction) == 0xe000 {
+		let offset = sign_extend((instruction & 0x07ff), 10) << 1;
+		format!("B Offset: {:#X}", offset)
 	} else if (0xf800 & instruction) == 0xf000 {
 		// TODO: Interpret as signed
-		let hi = (instruction & 0x07ff) as u32;
+		let hi = sign_extend(instruction & 0x07ff, 10);
 
 		//		pc += 2;
 		//		let bytes2: [u8; 2] = [data[pc], data[pc + 1]];
