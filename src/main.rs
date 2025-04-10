@@ -1356,10 +1356,6 @@ fn disassemble_thumb(instruction: u16) -> String {
 			format!("R{}, ", (instruction & 0x001c) >> 3)
 		};
 
-//		if op == "BX" {
-//		*thumb_mode = !*thumb_mode;
-//		}
-
 		format!("{} {}R{}", op, rd, instruction & 0x0007)
 	} else if (0xf800 & instruction) == 0x4800 {
 		format!("LDR R{}, PC, #{:#X}", (instruction & 0x0700) >> 8, instruction & 0x00ff)
