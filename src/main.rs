@@ -292,19 +292,7 @@ fn main() {
 
 							let is_1d_mapping = bus.ppu.get_disp_cnt().get_sprite_1d_mapping();
 							let mut texture_ids = Vec::<TextureId>::with_capacity(128);
-							for i in (0..OAM_SIZE as u32).step_by(8) {
-								let data = [
-									bus.ppu.read_8(OAM_ADDR + i),
-									bus.ppu.read_8(OAM_ADDR + i + 1),
-									bus.ppu.read_8(OAM_ADDR + i + 2),
-									bus.ppu.read_8(OAM_ADDR + i + 3),
-									bus.ppu.read_8(OAM_ADDR + i + 4),
-									bus.ppu.read_8(OAM_ADDR + i + 5),
-									bus.ppu.read_8(OAM_ADDR + i + 6),
-									bus.ppu.read_8(OAM_ADDR + i + 7),
-								];
-								let sprite = SpriteEntry::new(data.view_bits::<Lsb0>());
-
+							for sprite in bus.ppu.get_sprites() {
 								let (width, height) = sprite.get_size();
 								let tiles_per_row = if sprite.get_is_256_palette() { 16 } else { 32 };
 								let tile_length = if sprite.get_is_256_palette() { 64 } else { 32 };

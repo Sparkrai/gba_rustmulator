@@ -16,16 +16,16 @@ bitfield! {
 	/// Key Status (R)
 	pub struct KeyInput(u16);
 	impl Debug;
-	pub set_button_a, _: 0;
-	pub set_button_b, _: 1;
-	pub set_select, _: 2;
-	pub set_start, _: 3;
-	pub set_right, _: 4;
-	pub set_left, _: 5;
-	pub set_up, _: 6;
-	pub set_down, _: 7;
-	pub set_button_r, _: 8;
-	pub set_button_l, _: 9;
+	pub _, set_button_a: 0;
+	pub _, set_button_b: 1;
+	pub _, set_select: 2;
+	pub _, set_start: 3;
+	pub _, set_right: 4;
+	pub _, set_left: 5;
+	pub _, set_up: 6;
+	pub _, set_down: 7;
+	pub _, set_button_r: 8;
+	pub _, set_button_l: 9;
 }
 
 bitfield! {
@@ -106,7 +106,7 @@ impl IORegisters {
 	pub fn new() -> Self {
 		Self {
 			sound_bias: SoundBias(0x200),
-			key_input: KeyInput(0),
+			key_input: KeyInput(0x3ff),
 			interrupt_enable: IE(0),
 			interrupt_request: IF(0),
 			ime: false,

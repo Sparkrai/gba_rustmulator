@@ -1,112 +1,53 @@
-use bitvec::prelude::*;
+use bitfield::*;
 use num_traits::{FromPrimitive, PrimInt};
 
+use crate::arm7tdmi::cpu::{CpuResult, CPU, LINK_REGISTER_REGISTER, PROGRAM_COUNTER_REGISTER, STACK_POINTER_REGISTER};
 use crate::arm7tdmi::{cond_passed, load_32_from_memory, sign_extend, EExceptionType, EShiftType};
 use crate::system::{MemoryInterface, SystemBus};
-use crate::{
-	arm7tdmi::cpu::{CpuResult, CPU, LINK_REGISTER_REGISTER, PROGRAM_COUNTER_REGISTER, STACK_POINTER_REGISTER},
-	system::{Gba16BitRegister, Gba16BitSlice},
-};
 
-/// Exposes common information about an encoded THUMB instruction
-struct ThumbInstruction {
-	data: Gba16BitRegister,
+bitfield! {
+	/// Exposes common information about an encoded THUMB instruction
+	pub struct ThumbInstruction(u16);
+	impl Debug;
+	u8;
+	pub get_cond, _: 11, 8;
+	// Registers
+	pub get_rd_index, _: 2, 0;
+	pub get_rn_index, _: 5, 3;
+	pub get_rm_index, _: 8, 6;
+	/// Index of high Register Rm
+	pub get_hi_rm_index, _: 6, 3;
+	pub get_rs_index, _: 10, 8;
+	// Flags
+	pub get_b, _: 12;
+	pub get_l, _: 11;
+	pub get_i, _: 10;
+	pub get_is_sub, _: 9;
+	pub get_r, _: 8;
+	pub get_is_neg, _: 7;
+	// Immediates
+	pub u32, get_offset_11, _: 10, 0;
+	pub u32, get_imm_8, _: 7, 0;
+	pub i8, into i32, get_signed_imm_8, _: 7, 0;
+	pub u32, get_imm_7, _: 6, 0;
+	pub u32, get_imm_5, _: 10, 6;
+	raw_shift_type, _: 12, 11;
+	pub u8, get_register_list, _: 7, 0;
 }
 
 impl ThumbInstruction {
-	pub fn new(instruction: u16) -> Self {
-		Self {
-			data: Gba16BitRegister::new([instruction; 1]),
-		}
-	}
-	pub fn get_cond(&self) -> u8 {
-		self.data[8..12].load_le()
-	}
-
-	// Registers
-	pub fn get_rd_index(&self) -> u8 {
-		self.data[0..3].load_le()
-	}
-
-	pub fn get_rn_index(&self) -> u8 {
-		self.data[3..6].load_le()
-	}
-
 	/// Index of high Register Rd
 	pub fn get_hi_rd_index(&self) -> u8 {
-		self.data[0..3].load_le::<u8>() | ((self.data[7] as u8) << 3)
-	}
-
-	/// Index of high Register Rm
-	pub fn get_hi_rm_index(&self) -> u8 {
-		self.data[3..7].load_le()
-	}
-
-	pub fn get_rm_index(&self) -> u8 {
-		self.data[6..9].load_le()
-	}
-
-	pub fn get_rs_index(&self) -> u8 {
-		self.data[8..11].load_le()
-	}
-
-	// Flags
-	pub fn get_b(&self) -> bool {
-		self.data[12]
-	}
-
-	pub fn get_l(&self) -> bool {
-		self.data[11]
-	}
-
-	pub fn get_i(&self) -> bool {
-		self.data[10]
-	}
-
-	pub fn get_is_sub(&self) -> bool {
-		self.data[9]
-	}
-	
-	pub fn get_r(&self) -> bool {
-		self.data[8]
-	}
-	
-	pub fn get_is_neg(&self) -> bool {
-		self.data[7]
-	}
-
-	// Immediates
-	pub fn get_offset_11(&self) -> u32 {
-		self.data[0..11].load_le()
-	}
-
-	pub fn get_imm_8(&self) -> u32 {
-		self.data[0..8].load_le()
-	}
-
-	pub fn get_signed_imm_8(&self) -> i32 {
-		self.data[0..8].load_le::<u8>() as i8 as i32
-	}
-
-	pub fn get_imm_6(&self) -> u32 {
-		self.data[0..7].load_le()
-	}
-
-	pub fn get_imm_5(&self) -> u32 {
-		self.data[6..11].load_le()
+		BitRange::<u8>::bit_range(self, 2, 0) | ((self.bit(7) as u8) << 3)
 	}
 
 	pub fn get_shift_type(&self) -> EShiftType {
-		FromPrimitive::from_u8(self.data[11..=12].load_le::<u8>()).unwrap()
-	}
-
-	pub fn get_register_list(&self) -> &Gba16BitSlice {
-		&self.data[0..8]
+		FromPrimitive::from_u8(self.raw_shift_type()).unwrap()
 	}
 }
 
 pub fn execute_thumb(raw_instruction: u16, cpu: &mut CPU, bus: &mut SystemBus) -> CpuResult {
-	let instruction = ThumbInstruction::new(raw_instruction);
+	let instruction = ThumbInstruction(raw_instruction);
 	// ADD / SUB register
 	if (0xf800 & raw_instruction) == 0x1800 {
 		let is_sub = instruction.get_is_sub();
@@ -161,7 +102,7 @@ pub fn execute_thumb(raw_instruction: u16, cpu: &mut CPU, bus: &mut SystemBus) -
 					shifter_carry_out = cpu.get_cpsr().get_c();
 				} else {
 					alu_out = rm << offset;
-					shifter_carry_out = rm.view_bits::<Lsb0>()[32 - offset as usize];
+					shifter_carry_out = rm.bit(32 - offset as usize);
 				}
 			}
 			EShiftType::LSR => {
@@ -169,7 +110,7 @@ pub fn execute_thumb(raw_instruction: u16, cpu: &mut CPU, bus: &mut SystemBus) -
 					shifter_carry_out = (rm & 0x8000_0000) != 0;
 					alu_out = 0;
 				} else {
-					shifter_carry_out = rm.view_bits::<Lsb0>()[(offset - 1) as usize];
+					shifter_carry_out = rm.bit((offset - 1) as usize);
 					alu_out = rm >> offset;
 				}
 			}
@@ -183,7 +124,7 @@ pub fn execute_thumb(raw_instruction: u16, cpu: &mut CPU, bus: &mut SystemBus) -
 					shifter_carry_out = (rm & 0x8000_0000) > 0;
 				} else {
 					alu_out = rm.signed_shr(offset as u32);
-					shifter_carry_out = rm.view_bits::<Lsb0>()[(offset - 1) as usize];
+					shifter_carry_out = rm.bit((offset - 1) as usize);
 				}
 			}
 			EShiftType::ROR => {
@@ -201,7 +142,7 @@ pub fn execute_thumb(raw_instruction: u16, cpu: &mut CPU, bus: &mut SystemBus) -
 		let rd_index = instruction.get_rs_index();
 		let rd = cpu.get_register_value(rd_index);
 		let operand = instruction.get_imm_8();
-		let op: u32 = instruction.data[11..=12].load_le();
+		let op: u32 = instruction.bit_range(12, 11);
 		match op {
 			// MOV
 			0x0 => {
@@ -257,7 +198,7 @@ pub fn execute_thumb(raw_instruction: u16, cpu: &mut CPU, bus: &mut SystemBus) -
 		let rm = cpu.get_register_value(instruction.get_rn_index());
 		let rd_index = instruction.get_rd_index();
 		let rd = cpu.get_register_value(rd_index);
-		let op: u32 = instruction.data[6..=9].load_le();
+		let op: u32 = instruction.bit_range(9, 6);
 		match op {
 			// AND
 			0x0 => {
@@ -285,7 +226,7 @@ pub fn execute_thumb(raw_instruction: u16, cpu: &mut CPU, bus: &mut SystemBus) -
 					shifter_carry_out = cpu.get_cpsr().get_c();
 				} else if rs < 32 {
 					alu_out = rd << rs;
-					shifter_carry_out = rd.view_bits::<Lsb0>()[32 - rs as usize];
+					shifter_carry_out = rd.bit(32 - rs as usize);
 				} else if rs == 32 {
 					alu_out = 0;
 					shifter_carry_out = (rd & 0x0000_0001) != 0;
@@ -309,7 +250,7 @@ pub fn execute_thumb(raw_instruction: u16, cpu: &mut CPU, bus: &mut SystemBus) -
 					shifter_carry_out = cpu.get_cpsr().get_c();
 				} else if rs < 32 {
 					alu_out = rd.unsigned_shr(rs);
-					shifter_carry_out = rd.view_bits::<Lsb0>()[(rs - 1) as usize];
+					shifter_carry_out = rd.bit((rs - 1) as usize);
 				} else if rs == 32 {
 					alu_out = 0;
 					shifter_carry_out = (rd & 0x8000_0000) != 0;
@@ -333,7 +274,7 @@ pub fn execute_thumb(raw_instruction: u16, cpu: &mut CPU, bus: &mut SystemBus) -
 					shifter_carry_out = cpu.get_cpsr().get_c();
 				} else if rs < 32 {
 					alu_out = rd.signed_shr(rs);
-					shifter_carry_out = rd.view_bits::<Lsb0>()[(rs - 1) as usize];
+					shifter_carry_out = rd.bit((rs - 1) as usize);
 				} else {
 					shifter_carry_out = (rd & 0x0000_0001) != 0;
 					if !shifter_carry_out {
@@ -402,7 +343,7 @@ pub fn execute_thumb(raw_instruction: u16, cpu: &mut CPU, bus: &mut SystemBus) -
 					shifter_carry_out = (rd & 0x8000_0000) != 0;
 				} else {
 					alu_out = rd.rotate_right(rs_shift);
-					shifter_carry_out = rd.view_bits::<Lsb0>()[(rs_shift - 1) as usize];
+					shifter_carry_out = rd.bit((rs_shift - 1) as usize);
 				}
 
 				cpu.set_register_value(rd_index, alu_out);
@@ -504,7 +445,7 @@ pub fn execute_thumb(raw_instruction: u16, cpu: &mut CPU, bus: &mut SystemBus) -
 		let rm = cpu.get_register_value(instruction.get_hi_rm_index());
 		let rd_index = instruction.get_hi_rd_index();
 		let rd = cpu.get_register_value(rd_index);
-		match instruction.data[8..=9].load_le::<u32>() {
+		match BitRange::<u8>::bit_range(&instruction, 9, 8) {
 			// ADD
 			0x0 => cpu.set_register_value(rd_index, rd.wrapping_add(rm)),
 			// CMP
@@ -575,7 +516,7 @@ pub fn execute_thumb(raw_instruction: u16, cpu: &mut CPU, bus: &mut SystemBus) -
 		let address = rn.wrapping_add(rm);
 
 		let l = instruction.get_l();
-		
+
 		// NOTE: Flag is in bits 10
 		let s = instruction.get_i();
 
@@ -700,7 +641,7 @@ pub fn execute_thumb(raw_instruction: u16, cpu: &mut CPU, bus: &mut SystemBus) -
 	} else if (0xff00 & raw_instruction) == 0xb000 {
 		// ADD offset to Stack Pointer
 		let is_sub = instruction.get_is_neg();
-		let operand = instruction.get_imm_6();
+		let operand = instruction.get_imm_7();
 		let sp = cpu.get_register_value(STACK_POINTER_REGISTER);
 
 		if is_sub {
@@ -722,7 +663,7 @@ pub fn execute_thumb(raw_instruction: u16, cpu: &mut CPU, bus: &mut SystemBus) -
 			let mut address = start_address;
 
 			for i in 0..8 {
-				if reg_list[i] {
+				if reg_list.bit(i) {
 					cpu.set_register_value(i as u8, bus.read_32(address & !0x3));
 					address = address.wrapping_add(4);
 				}
@@ -742,7 +683,7 @@ pub fn execute_thumb(raw_instruction: u16, cpu: &mut CPU, bus: &mut SystemBus) -
 			let end_address = sp.wrapping_sub(4);
 			let mut address = start_address;
 			for i in 0..8 {
-				if reg_list[i] {
+				if reg_list.bit(i) {
 					bus.write_32(address & !0x3, cpu.get_register_value(i as u8));
 					address = address.wrapping_add(4);
 				}
@@ -769,7 +710,7 @@ pub fn execute_thumb(raw_instruction: u16, cpu: &mut CPU, bus: &mut SystemBus) -
 		let reg_list = instruction.get_register_list();
 
 		// NOTE: UNPREDICTABLE!!!
-		if reg_list.not_any() {
+		if reg_list == 0 {
 			// Addressing Mode
 			let address = rn & !0x3;
 			cpu.set_register_value(rn_index, rn.wrapping_add(0x40));
@@ -789,14 +730,14 @@ pub fn execute_thumb(raw_instruction: u16, cpu: &mut CPU, bus: &mut SystemBus) -
 			let end_address = rn.wrapping_add(4 * (reg_list.count_ones() as u32)) - 4;
 			let mut address = start_address;
 
-			let store_rn = reg_list[rn_index as usize];
+			let store_rn = reg_list.bit(rn_index as usize);
 			if !(l && store_rn) {
 				cpu.set_register_value(rn_index, rn.wrapping_add(4 * (reg_list.count_ones() as u32)));
 			}
 
 			if l {
 				for i in 0..8 {
-					if reg_list[i] {
+					if reg_list.bit(i) {
 						cpu.set_register_value(i as u8, bus.read_32(address));
 						address = address.wrapping_add(4);
 					}
@@ -805,7 +746,7 @@ pub fn execute_thumb(raw_instruction: u16, cpu: &mut CPU, bus: &mut SystemBus) -
 			} else {
 				let mut first = true;
 				for i in 0..8 {
-					if reg_list[i] {
+					if reg_list.bit(i) {
 						// NOTE: UNPREDICTABLE BEHAVIOR
 						let value = if first && i == rn_index as usize { rn } else { cpu.get_register_value(i as u8) };
 

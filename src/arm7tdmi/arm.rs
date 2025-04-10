@@ -1,106 +1,49 @@
 use std::u32;
 
-use bitvec::prelude::*;
+use bitfield::*;
 use num_traits::{FromPrimitive, PrimInt};
 
 use crate::arm7tdmi::cpu::{CpuResult, CPU, LINK_REGISTER_REGISTER, PROGRAM_COUNTER_REGISTER};
 use crate::arm7tdmi::{cond_passed, load_32_from_memory, sign_extend, EExceptionType, EOperatingMode, EShiftType};
-use crate::system::{Gba32BitRegister, Gba32BitSlice, MemoryInterface, SystemBus};
+use crate::system::{MemoryInterface, SystemBus};
 
-/// Exposes common information about an encoded ARM instruction
-struct ArmInstruction {
-	data: Gba32BitRegister,
+bitfield! {
+	/// Exposes common information about an encoded ARM instruction
+	pub struct ArmInstruction(u32);
+	impl Debug;
+	u8;
+	pub get_cond, _: 31, 28;
+	// Registers
+	pub get_rd_index, _: 15, 12;
+	pub get_rn_index, _: 19, 16;
+	pub get_rm_index, _: 3, 0;
+	pub get_rs_index, _: 11, 8;
+	// Flags
+	pub get_alu_s, _: 20;
+	pub get_i, _: 25;
+	pub get_p, _: 24;
+	pub get_u, _: 23;
+	pub get_b, _: 22;
+	pub get_w, _: 21;
+	pub get_l, _: 20;
+	pub get_r, _: 22;
+	// Immediates
+	pub u32, get_offset_12, _: 11, 0;
+	pub u32, get_imm_8, _: 7, 0;
+	pub u32, get_rot_imm_8, _: 11, 8;
+	pub u32, get_shift, _: 11, 7;
+	raw_shift_type, _: 6, 5;
+	pub u16, get_register_list, _: 15, 0;
 }
 
 impl ArmInstruction {
-	pub fn new(instruction: u32) -> Self {
-		Self {
-			data: Gba32BitRegister::new([instruction; 1]),
-		}
-	}
-
-	pub fn get_cond(&self) -> u8 {
-		self.data[28..32].load_le()
-	}
-
-	// Registers
-	pub fn get_rd_index(&self) -> u8 {
-		self.data[12..16].load_le()
-	}
-
-	pub fn get_rn_index(&self) -> u8 {
-		self.data[16..20].load_le()
-	}
-
-	pub fn get_rm_index(&self) -> u8 {
-		self.data[0..4].load_le()
-	}
-
-	pub fn get_rs_index(&self) -> u8 {
-		self.data[8..12].load_le()
-	}
-
-	pub fn get_alu_s(&self) -> bool {
-		self.data[20]
-	}
-
-	// Flags
-	pub fn get_i(&self) -> bool {
-		self.data[25]
-	}
-
-	pub fn get_p(&self) -> bool {
-		self.data[24]
-	}
-
-	pub fn get_u(&self) -> bool {
-		self.data[23]
-	}
-
-	pub fn get_b(&self) -> bool {
-		self.data[22]
-	}
-
-	pub fn get_w(&self) -> bool {
-		self.data[21]
-	}
-
-	pub fn get_l(&self) -> bool {
-		self.data[20]
-	}
-
-	pub fn get_r(&self) -> bool {
-		self.data[22]
-	}
-
-	// Immediates
-	pub fn get_offset_12(&self) -> u32 {
-		self.data[0..12].load_le()
-	}
-
-	pub fn get_imm_8(&self) -> u32 {
-		self.data[0..8].load_le()
-	}
-
-	pub fn get_rot_imm_8(&self) -> u32 {
-		self.data[8..12].load_le()
-	}
-
-	pub fn get_shift(&self) -> u32 {
-		self.data[7..12].load_le()
-	}
-
 	pub fn get_shift_type(&self) -> EShiftType {
-		FromPrimitive::from_u8(self.data[5..=6].load_le::<u8>()).unwrap()
-	}
-
-	pub fn get_register_list(&self) -> &Gba32BitSlice {
-		&self.data[0..16]
+		FromPrimitive::from_u8(self.raw_shift_type()).unwrap()
 	}
 }
 
 pub fn execute_arm(cpu: &mut CPU, bus: &mut SystemBus, raw_instruction: u32) -> CpuResult {
-	let instruction = ArmInstruction::new(raw_instruction);
+	let instruction = ArmInstruction(raw_instruction);
 	if cond_passed(cpu, instruction.get_cond()) {
 		if (0x0fff_fff0 & raw_instruction) == 0x012f_ff10 {
 			// BX
@@ -110,12 +53,12 @@ pub fn execute_arm(cpu: &mut CPU, bus: &mut SystemBus, raw_instruction: u32) -> 
 			return CpuResult::FlushPipeline;
 		} else if (0x0e00_0000 & raw_instruction) == 0x0a00_0000 {
 			// Branch
-			if instruction.data[24] {
+			if instruction.bit(24) {
 				// Branch with Link
 				cpu.set_register_value(LINK_REGISTER_REGISTER, cpu.get_current_pc() + 4);
 			}
 
-			let offset = sign_extend(instruction.data[0..24].load_le::<u32>(), 24);
+			let offset = sign_extend::<u32>(instruction.bit_range(23, 0), 24);
 			cpu.set_register_value(
 				PROGRAM_COUNTER_REGISTER,
 				(cpu.get_register_value(PROGRAM_COUNTER_REGISTER) as i32).wrapping_add(offset << 2) as u32,
@@ -166,14 +109,14 @@ pub fn execute_arm(cpu: &mut CPU, bus: &mut SystemBus, raw_instruction: u32) -> 
 			let rd_index = instruction.get_rn_index();
 
 			// NOTE: Bit 24 is only used from ARMv5 and up
-			match instruction.data[21..24].load_le::<u8>() {
+			match BitRange::<u8>::bit_range(&instruction, 23, 21) {
 				// MUL
 				0x0 => {
 					let alu_out = rm.wrapping_mul(rs);
 					cpu.set_register_value(rd_index, alu_out);
 
 					if s {
-						cpu.get_mut_cpsr().set_n(alu_out.view_bits::<Lsb0>()[31]);
+						cpu.get_mut_cpsr().set_n(alu_out.bit(31));
 						cpu.get_mut_cpsr().set_z(alu_out == 0);
 						cpu.get_mut_cpsr().set_c(false);
 					}
@@ -184,7 +127,7 @@ pub fn execute_arm(cpu: &mut CPU, bus: &mut SystemBus, raw_instruction: u32) -> 
 					cpu.set_register_value(rd_index, alu_out);
 
 					if s {
-						cpu.get_mut_cpsr().set_n(alu_out.view_bits::<Lsb0>()[31]);
+						cpu.get_mut_cpsr().set_n(alu_out.bit(31));
 						cpu.get_mut_cpsr().set_z(alu_out == 0);
 						cpu.get_mut_cpsr().set_c(false);
 					}
@@ -278,9 +221,9 @@ pub fn execute_arm(cpu: &mut CPU, bus: &mut SystemBus, raw_instruction: u32) -> 
 
 			// SPSR vs CPSR
 			if r {
-				cpu.set_register_value(rd_index, cpu.get_spsr(cpu.get_operating_mode()).get_value());
+				cpu.set_register_value(rd_index, cpu.get_spsr(cpu.get_operating_mode()).0);
 			} else {
-				cpu.set_register_value(rd_index, cpu.get_cpsr().get_value());
+				cpu.set_register_value(rd_index, cpu.get_cpsr().0);
 			}
 
 			if rd_index == PROGRAM_COUNTER_REGISTER {
@@ -289,10 +232,10 @@ pub fn execute_arm(cpu: &mut CPU, bus: &mut SystemBus, raw_instruction: u32) -> 
 		} else if (0x0db0_f000 & raw_instruction) == 0x0120_f000 {
 			// MSR (PSR Transfer)
 			let i = instruction.get_i();
-			let f_mask = if instruction.data[19] { 0xff00_0000u32 } else { 0x0000_0000 };
-			let s_mask = if instruction.data[18] { 0x00ff_0000u32 } else { 0x0000_0000 };
-			let x_mask = if instruction.data[17] { 0x0000_ff00u32 } else { 0x0000_0000 };
-			let c_mask = if instruction.data[16] { 0x0000_00ffu32 } else { 0x0000_0000 };
+			let f_mask = if instruction.bit(19) { 0xff00_0000u32 } else { 0x0000_0000 };
+			let s_mask = if instruction.bit(18) { 0x00ff_0000u32 } else { 0x0000_0000 };
+			let x_mask = if instruction.bit(17) { 0x0000_ff00u32 } else { 0x0000_0000 };
+			let c_mask = if instruction.bit(16) { 0x0000_00ffu32 } else { 0x0000_0000 };
 
 			let r = instruction.get_r();
 
@@ -325,7 +268,7 @@ pub fn execute_arm(cpu: &mut CPU, bus: &mut SystemBus, raw_instruction: u32) -> 
 
 				let old_mode = cpu.get_operating_mode();
 				psr = cpu.get_mut_cpsr();
-				psr.set_value((psr.get_value() & !mask) | (operand & mask));
+				psr.0 = (psr.0 & !mask) | (operand & mask);
 				let new_mode = cpu.get_operating_mode();
 
 				cpu.change_operating_mode(new_mode, old_mode);
@@ -333,7 +276,7 @@ pub fn execute_arm(cpu: &mut CPU, bus: &mut SystemBus, raw_instruction: u32) -> 
 				mask = byte_mask & (USER_MASK | PRIV_MASK | STATE_MASK);
 				if cpu.get_operating_mode() != EOperatingMode::UserMode && cpu.get_operating_mode() != EOperatingMode::SystemMode {
 					psr = cpu.get_mut_spsr(cpu.get_operating_mode());
-					psr.set_value((psr.get_value() & !mask) | (operand & mask));
+					psr.0 = (psr.0 & !mask) | (operand & mask);
 				} else {
 					// NOTE: UNPREDICTABLE!
 					std::unreachable!();
@@ -485,8 +428,8 @@ pub fn execute_arm(cpu: &mut CPU, bus: &mut SystemBus, raw_instruction: u32) -> 
 			let w = instruction.get_w();
 			let l = instruction.get_l();
 
-			let h = instruction.data[5];
-			let s = instruction.data[6];
+			let h = instruction.bit(5);
+			let s = instruction.bit(6);
 
 			let rn_index = instruction.get_rn_index();
 			let rn = cpu.get_register_value(rn_index);
@@ -497,7 +440,7 @@ pub fn execute_arm(cpu: &mut CPU, bus: &mut SystemBus, raw_instruction: u32) -> 
 
 			let offset;
 			if i {
-				offset = (instruction.data[8..12].load_le::<u32>() << 4) | instruction.data[0..4].load_le::<u32>();
+				offset = (BitRange::<u32>::bit_range(&instruction, 11, 8) << 4) | BitRange::<u32>::bit_range(&instruction, 3, 0);
 			} else {
 				let rm_index = instruction.get_rm_index();
 				offset = cpu.get_register_value(rm_index);
@@ -590,7 +533,7 @@ pub fn execute_arm(cpu: &mut CPU, bus: &mut SystemBus, raw_instruction: u32) -> 
 			let reg_list = instruction.get_register_list();
 
 			// NOTE: UNPREDICTABLE!!!
-			if reg_list.not_any() {
+			if reg_list == 0 {
 				// Addressing Mode
 				let aligned_rn = rn & !0x3;
 				let address;
@@ -648,10 +591,10 @@ pub fn execute_arm(cpu: &mut CPU, bus: &mut SystemBus, raw_instruction: u32) -> 
 					end_address = aligned_rn;
 				}
 
-				let store_rn = reg_list[rn_index as usize];
+				let store_rn = reg_list.bit(rn_index as usize);
 				let user_bank_transfer = if s {
 					if l {
-						!reg_list[PROGRAM_COUNTER_REGISTER as usize]
+						!reg_list.bit(PROGRAM_COUNTER_REGISTER as usize)
 					} else {
 						true
 					}
@@ -676,18 +619,18 @@ pub fn execute_arm(cpu: &mut CPU, bus: &mut SystemBus, raw_instruction: u32) -> 
 				let mut address = start_address;
 				if l {
 					for i in 0..15 {
-						if reg_list[i] {
+						if reg_list.bit(i) {
 							let value = load_32_from_memory(bus, address);
 							cpu.set_register_value(i as u8, value);
 							address = address.wrapping_add(4);
 						}
 					}
 
-					if reg_list[PROGRAM_COUNTER_REGISTER as usize] {
+					if reg_list.bit(PROGRAM_COUNTER_REGISTER as usize) {
 						if s {
 							let old_mode = cpu.get_operating_mode();
-							let spsr = cpu.get_spsr(old_mode).get_value();
-							cpu.get_mut_cpsr().set_value(spsr);
+							let spsr = cpu.get_spsr(old_mode).0;
+							cpu.get_mut_cpsr().0 = spsr;
 							let new_mode = cpu.get_operating_mode();
 
 							cpu.change_operating_mode(new_mode, old_mode);
@@ -701,7 +644,7 @@ pub fn execute_arm(cpu: &mut CPU, bus: &mut SystemBus, raw_instruction: u32) -> 
 				} else {
 					let mut first = true;
 					for i in 0..16 {
-						if reg_list[i] {
+						if reg_list.bit(i) {
 							// NOTE: UNPREDICTABLE BEHAVIOR
 							let value = if first && i == rn_index as usize {
 								rn
@@ -726,7 +669,7 @@ pub fn execute_arm(cpu: &mut CPU, bus: &mut SystemBus, raw_instruction: u32) -> 
 				}
 
 				// NOTE: PC Changed!!!
-				if (l && reg_list[PROGRAM_COUNTER_REGISTER as usize]) || (w && !(l && store_rn) && rn_index == PROGRAM_COUNTER_REGISTER) {
+				if (l && reg_list.bit(PROGRAM_COUNTER_REGISTER as usize)) || (w && !(l && store_rn) && rn_index == PROGRAM_COUNTER_REGISTER) {
 					return CpuResult::FlushPipeline;
 				}
 			}
@@ -756,7 +699,7 @@ pub fn execute_arm(cpu: &mut CPU, bus: &mut SystemBus, raw_instruction: u32) -> 
 			} else {
 				let rm_index = instruction.get_rm_index();
 				let mut rm = cpu.get_register_value(rm_index);
-				let r = instruction.data[4];
+				let r = instruction.bit(4);
 				let shift_type = instruction.get_shift_type();
 				if r {
 					let rs = cpu.get_register_value(instruction.get_rs_index()) & 0x0000_00ff;
@@ -775,7 +718,7 @@ pub fn execute_arm(cpu: &mut CPU, bus: &mut SystemBus, raw_instruction: u32) -> 
 								shifter_carry_out = cpu.get_cpsr().get_c();
 							} else if rs < 32 {
 								shifter_operand = rm << rs;
-								shifter_carry_out = rm.view_bits::<Lsb0>()[32 - rs as usize];
+								shifter_carry_out = rm.bit(32 - rs as usize);
 							} else if rs == 32 {
 								shifter_operand = 0;
 								shifter_carry_out = (rm & 0x0000_0001) > 0;
@@ -790,7 +733,7 @@ pub fn execute_arm(cpu: &mut CPU, bus: &mut SystemBus, raw_instruction: u32) -> 
 								shifter_carry_out = cpu.get_cpsr().get_c();
 							} else if rs < 32 {
 								shifter_operand = rm.unsigned_shr(rs);
-								shifter_carry_out = rm.view_bits::<Lsb0>()[(rs - 1) as usize];
+								shifter_carry_out = rm.bit((rs - 1) as usize);
 							} else if rs == 32 {
 								shifter_operand = 0;
 								shifter_carry_out = (rm & 0x8000_0000) > 0;
@@ -805,7 +748,7 @@ pub fn execute_arm(cpu: &mut CPU, bus: &mut SystemBus, raw_instruction: u32) -> 
 								shifter_carry_out = cpu.get_cpsr().get_c();
 							} else if rs < 32 {
 								shifter_operand = rm.signed_shr(rs);
-								shifter_carry_out = rm.view_bits::<Lsb0>()[(rs - 1) as usize];
+								shifter_carry_out = rm.bit((rs - 1) as usize);
 							} else {
 								if (rm & 0x8000_0000) == 0 {
 									shifter_operand = 0;
@@ -825,7 +768,7 @@ pub fn execute_arm(cpu: &mut CPU, bus: &mut SystemBus, raw_instruction: u32) -> 
 								shifter_carry_out = (rm & 0x8000_0000) > 0;
 							} else {
 								shifter_operand = rm.rotate_right(rs_shift);
-								shifter_carry_out = rm.view_bits::<Lsb0>()[(rs_shift - 1) as usize];
+								shifter_carry_out = rm.bit((rs_shift - 1) as usize);
 							}
 						}
 					}
@@ -838,7 +781,7 @@ pub fn execute_arm(cpu: &mut CPU, bus: &mut SystemBus, raw_instruction: u32) -> 
 								shifter_carry_out = cpu.get_cpsr().get_c();
 							} else {
 								shifter_operand = rm << shift;
-								shifter_carry_out = rm.view_bits::<Lsb0>()[32 - shift as usize];
+								shifter_carry_out = rm.bit(32 - shift as usize);
 							}
 						}
 						EShiftType::LSR => {
@@ -847,7 +790,7 @@ pub fn execute_arm(cpu: &mut CPU, bus: &mut SystemBus, raw_instruction: u32) -> 
 								shifter_carry_out = (rm & 0x8000_0000) > 0;
 							} else {
 								shifter_operand = rm.unsigned_shr(shift);
-								shifter_carry_out = rm.view_bits::<Lsb0>()[(shift - 1) as usize];
+								shifter_carry_out = rm.bit((shift - 1) as usize);
 							}
 						}
 						EShiftType::ASR => {
@@ -860,7 +803,7 @@ pub fn execute_arm(cpu: &mut CPU, bus: &mut SystemBus, raw_instruction: u32) -> 
 								shifter_carry_out = (rm & 0x8000_0000) > 0;
 							} else {
 								shifter_operand = rm.signed_shr(shift);
-								shifter_carry_out = rm.view_bits::<Lsb0>()[(shift - 1) as usize];
+								shifter_carry_out = rm.bit((shift - 1) as usize);
 							}
 						}
 						EShiftType::ROR => {
@@ -869,14 +812,14 @@ pub fn execute_arm(cpu: &mut CPU, bus: &mut SystemBus, raw_instruction: u32) -> 
 								shifter_carry_out = (rm & 0x0000_0001) != 0;
 							} else {
 								shifter_operand = rm.rotate_right(shift);
-								shifter_carry_out = rm.view_bits::<Lsb0>()[(shift - 1) as usize];
+								shifter_carry_out = rm.bit((shift - 1) as usize);
 							}
 						}
 					}
 				}
 			}
 
-			match instruction.data[21..=24].load_le::<u8>() {
+			match BitRange::<u8>::bit_range(&instruction, 24, 21) {
 				// AND
 				0x0 => {
 					let alu_out = rn & shifter_operand;
@@ -886,8 +829,8 @@ pub fn execute_arm(cpu: &mut CPU, bus: &mut SystemBus, raw_instruction: u32) -> 
 						if rd_index == PROGRAM_COUNTER_REGISTER {
 							if cpu.get_operating_mode() != EOperatingMode::UserMode && cpu.get_operating_mode() != EOperatingMode::SystemMode {
 								let old_mode = cpu.get_operating_mode();
-								let spsr = cpu.get_spsr(old_mode).get_value();
-								cpu.get_mut_cpsr().set_value(spsr);
+								let spsr = cpu.get_spsr(old_mode).0;
+								cpu.get_mut_cpsr().0 = spsr;
 								let new_mode = cpu.get_operating_mode();
 
 								cpu.change_operating_mode(new_mode, old_mode);
@@ -895,7 +838,7 @@ pub fn execute_arm(cpu: &mut CPU, bus: &mut SystemBus, raw_instruction: u32) -> 
 								// NOTE: UNPREDICTABLE!
 							}
 						} else {
-							cpu.get_mut_cpsr().set_n(alu_out.view_bits::<Lsb0>()[31]);
+							cpu.get_mut_cpsr().set_n(alu_out.bit(31));
 							cpu.get_mut_cpsr().set_z(alu_out == 0);
 							cpu.get_mut_cpsr().set_c(shifter_carry_out);
 						}
@@ -910,8 +853,8 @@ pub fn execute_arm(cpu: &mut CPU, bus: &mut SystemBus, raw_instruction: u32) -> 
 						if rd_index == PROGRAM_COUNTER_REGISTER {
 							if cpu.get_operating_mode() != EOperatingMode::UserMode && cpu.get_operating_mode() != EOperatingMode::SystemMode {
 								let old_mode = cpu.get_operating_mode();
-								let spsr = cpu.get_spsr(old_mode).get_value();
-								cpu.get_mut_cpsr().set_value(spsr);
+								let spsr = cpu.get_spsr(old_mode).0;
+								cpu.get_mut_cpsr().0 = spsr;
 								let new_mode = cpu.get_operating_mode();
 
 								cpu.change_operating_mode(new_mode, old_mode);
@@ -919,7 +862,7 @@ pub fn execute_arm(cpu: &mut CPU, bus: &mut SystemBus, raw_instruction: u32) -> 
 								// NOTE: UNPREDICTABLE!
 							}
 						} else {
-							cpu.get_mut_cpsr().set_n(alu_out.view_bits::<Lsb0>()[31]);
+							cpu.get_mut_cpsr().set_n(alu_out.bit(31));
 							cpu.get_mut_cpsr().set_z(alu_out == 0);
 							cpu.get_mut_cpsr().set_c(shifter_carry_out);
 						}
@@ -935,8 +878,8 @@ pub fn execute_arm(cpu: &mut CPU, bus: &mut SystemBus, raw_instruction: u32) -> 
 						if rd_index == PROGRAM_COUNTER_REGISTER {
 							if cpu.get_operating_mode() != EOperatingMode::UserMode && cpu.get_operating_mode() != EOperatingMode::SystemMode {
 								let old_mode = cpu.get_operating_mode();
-								let spsr = cpu.get_spsr(old_mode).get_value();
-								cpu.get_mut_cpsr().set_value(spsr);
+								let spsr = cpu.get_spsr(old_mode).0;
+								cpu.get_mut_cpsr().0 = spsr;
 								let new_mode = cpu.get_operating_mode();
 
 								cpu.change_operating_mode(new_mode, old_mode);
@@ -947,7 +890,7 @@ pub fn execute_arm(cpu: &mut CPU, bus: &mut SystemBus, raw_instruction: u32) -> 
 							// Overflow is sign changes
 							let (_, overflow) = (rn as i32).overflowing_sub(shifter_operand as i32);
 
-							cpu.get_mut_cpsr().set_n(alu_out.view_bits::<Lsb0>()[31]);
+							cpu.get_mut_cpsr().set_n(alu_out.bit(31));
 							cpu.get_mut_cpsr().set_z(alu_out == 0);
 							cpu.get_mut_cpsr().set_c(!borrowed);
 							cpu.get_mut_cpsr().set_v(overflow);
@@ -964,8 +907,8 @@ pub fn execute_arm(cpu: &mut CPU, bus: &mut SystemBus, raw_instruction: u32) -> 
 						if rd_index == PROGRAM_COUNTER_REGISTER {
 							if cpu.get_operating_mode() != EOperatingMode::UserMode && cpu.get_operating_mode() != EOperatingMode::SystemMode {
 								let old_mode = cpu.get_operating_mode();
-								let spsr = cpu.get_spsr(old_mode).get_value();
-								cpu.get_mut_cpsr().set_value(spsr);
+								let spsr = cpu.get_spsr(old_mode).0;
+								cpu.get_mut_cpsr().0 = spsr;
 								let new_mode = cpu.get_operating_mode();
 
 								cpu.change_operating_mode(new_mode, old_mode);
@@ -976,7 +919,7 @@ pub fn execute_arm(cpu: &mut CPU, bus: &mut SystemBus, raw_instruction: u32) -> 
 							// Overflow if sign changes
 							let (_, overflow) = (rn as i32).overflowing_sub(shifter_operand as i32);
 
-							cpu.get_mut_cpsr().set_n(alu_out.view_bits::<Lsb0>()[31]);
+							cpu.get_mut_cpsr().set_n(alu_out.bit(31));
 							cpu.get_mut_cpsr().set_z(alu_out == 0);
 							cpu.get_mut_cpsr().set_c(!borrowed);
 							cpu.get_mut_cpsr().set_v(overflow);
@@ -993,8 +936,8 @@ pub fn execute_arm(cpu: &mut CPU, bus: &mut SystemBus, raw_instruction: u32) -> 
 						if rd_index == PROGRAM_COUNTER_REGISTER {
 							if cpu.get_operating_mode() != EOperatingMode::UserMode && cpu.get_operating_mode() != EOperatingMode::SystemMode {
 								let old_mode = cpu.get_operating_mode();
-								let spsr = cpu.get_spsr(old_mode).get_value();
-								cpu.get_mut_cpsr().set_value(spsr);
+								let spsr = cpu.get_spsr(old_mode).0;
+								cpu.get_mut_cpsr().0 = spsr;
 								let new_mode = cpu.get_operating_mode();
 
 								cpu.change_operating_mode(new_mode, old_mode);
@@ -1005,7 +948,7 @@ pub fn execute_arm(cpu: &mut CPU, bus: &mut SystemBus, raw_instruction: u32) -> 
 							// Overflow if sign changes
 							let (_, overflow) = (rn as i32).overflowing_add(shifter_operand as i32);
 
-							cpu.get_mut_cpsr().set_n(alu_out.view_bits::<Lsb0>()[31]);
+							cpu.get_mut_cpsr().set_n(alu_out.bit(31));
 							cpu.get_mut_cpsr().set_z(alu_out == 0);
 							cpu.get_mut_cpsr().set_c(borrowed);
 							cpu.get_mut_cpsr().set_v(overflow);
@@ -1025,8 +968,8 @@ pub fn execute_arm(cpu: &mut CPU, bus: &mut SystemBus, raw_instruction: u32) -> 
 						if rd_index == PROGRAM_COUNTER_REGISTER {
 							if cpu.get_operating_mode() != EOperatingMode::UserMode && cpu.get_operating_mode() != EOperatingMode::SystemMode {
 								let old_mode = cpu.get_operating_mode();
-								let spsr = cpu.get_spsr(old_mode).get_value();
-								cpu.get_mut_cpsr().set_value(spsr);
+								let spsr = cpu.get_spsr(old_mode).0;
+								cpu.get_mut_cpsr().0 = spsr;
 								let new_mode = cpu.get_operating_mode();
 
 								cpu.change_operating_mode(new_mode, old_mode);
@@ -1039,7 +982,7 @@ pub fn execute_arm(cpu: &mut CPU, bus: &mut SystemBus, raw_instruction: u32) -> 
 							let (_, overflow_second) = (alu_out_first as i32).overflowing_add(c as i32);
 							let overflow = overflow_first || overflow_second;
 
-							cpu.get_mut_cpsr().set_n(alu_out.view_bits::<Lsb0>()[31]);
+							cpu.get_mut_cpsr().set_n(alu_out.bit(31));
 							cpu.get_mut_cpsr().set_z(alu_out == 0);
 							cpu.get_mut_cpsr().set_c(borrowed);
 							cpu.get_mut_cpsr().set_v(overflow);
@@ -1059,8 +1002,8 @@ pub fn execute_arm(cpu: &mut CPU, bus: &mut SystemBus, raw_instruction: u32) -> 
 						if rd_index == PROGRAM_COUNTER_REGISTER {
 							if cpu.get_operating_mode() != EOperatingMode::UserMode && cpu.get_operating_mode() != EOperatingMode::SystemMode {
 								let old_mode = cpu.get_operating_mode();
-								let spsr = cpu.get_spsr(old_mode).get_value();
-								cpu.get_mut_cpsr().set_value(spsr);
+								let spsr = cpu.get_spsr(old_mode).0;
+								cpu.get_mut_cpsr().0 = spsr;
 								let new_mode = cpu.get_operating_mode();
 
 								cpu.change_operating_mode(new_mode, old_mode);
@@ -1073,7 +1016,7 @@ pub fn execute_arm(cpu: &mut CPU, bus: &mut SystemBus, raw_instruction: u32) -> 
 							let (_, overflow_second) = (alu_out_first as i32).overflowing_sub(c as i32);
 							let overflow = overflow_first || overflow_second;
 
-							cpu.get_mut_cpsr().set_n(alu_out.view_bits::<Lsb0>()[31]);
+							cpu.get_mut_cpsr().set_n(alu_out.bit(31));
 							cpu.get_mut_cpsr().set_z(alu_out == 0);
 							cpu.get_mut_cpsr().set_c(!borrowed);
 							cpu.get_mut_cpsr().set_v(overflow);
@@ -1093,8 +1036,8 @@ pub fn execute_arm(cpu: &mut CPU, bus: &mut SystemBus, raw_instruction: u32) -> 
 						if rd_index == PROGRAM_COUNTER_REGISTER {
 							if cpu.get_operating_mode() != EOperatingMode::UserMode && cpu.get_operating_mode() != EOperatingMode::SystemMode {
 								let old_mode = cpu.get_operating_mode();
-								let spsr = cpu.get_spsr(old_mode).get_value();
-								cpu.get_mut_cpsr().set_value(spsr);
+								let spsr = cpu.get_spsr(old_mode).0;
+								cpu.get_mut_cpsr().0 = spsr;
 								let new_mode = cpu.get_operating_mode();
 
 								cpu.change_operating_mode(new_mode, old_mode);
@@ -1107,7 +1050,7 @@ pub fn execute_arm(cpu: &mut CPU, bus: &mut SystemBus, raw_instruction: u32) -> 
 							let (_, overflow_second) = (alu_out_first as i32).overflowing_sub(c as i32);
 							let overflow = overflow_first || overflow_second;
 
-							cpu.get_mut_cpsr().set_n(alu_out.view_bits::<Lsb0>()[31]);
+							cpu.get_mut_cpsr().set_n(alu_out.bit(31));
 							cpu.get_mut_cpsr().set_z(alu_out == 0);
 							cpu.get_mut_cpsr().set_c(!borrowed);
 							cpu.get_mut_cpsr().set_v(overflow);
@@ -1121,8 +1064,8 @@ pub fn execute_arm(cpu: &mut CPU, bus: &mut SystemBus, raw_instruction: u32) -> 
 					if rd_index == PROGRAM_COUNTER_REGISTER {
 						if cpu.get_operating_mode() != EOperatingMode::UserMode && cpu.get_operating_mode() != EOperatingMode::SystemMode {
 							let old_mode = cpu.get_operating_mode();
-							let spsr = cpu.get_spsr(old_mode).get_value();
-							cpu.get_mut_cpsr().set_value(spsr);
+							let spsr = cpu.get_spsr(old_mode).0;
+							cpu.get_mut_cpsr().0 = spsr;
 							let new_mode = cpu.get_operating_mode();
 
 							cpu.change_operating_mode(new_mode, old_mode);
@@ -1131,7 +1074,7 @@ pub fn execute_arm(cpu: &mut CPU, bus: &mut SystemBus, raw_instruction: u32) -> 
 						}
 					}
 
-					cpu.get_mut_cpsr().set_n(alu_out.view_bits::<Lsb0>()[31]);
+					cpu.get_mut_cpsr().set_n(alu_out.bit(31));
 					cpu.get_mut_cpsr().set_z(alu_out == 0);
 					cpu.get_mut_cpsr().set_c(shifter_carry_out);
 				}
@@ -1142,8 +1085,8 @@ pub fn execute_arm(cpu: &mut CPU, bus: &mut SystemBus, raw_instruction: u32) -> 
 					if rd_index == PROGRAM_COUNTER_REGISTER {
 						if cpu.get_operating_mode() != EOperatingMode::UserMode && cpu.get_operating_mode() != EOperatingMode::SystemMode {
 							let old_mode = cpu.get_operating_mode();
-							let spsr = cpu.get_spsr(old_mode).get_value();
-							cpu.get_mut_cpsr().set_value(spsr);
+							let spsr = cpu.get_spsr(old_mode).0;
+							cpu.get_mut_cpsr().0 = spsr;
 							let new_mode = cpu.get_operating_mode();
 
 							cpu.change_operating_mode(new_mode, old_mode);
@@ -1152,7 +1095,7 @@ pub fn execute_arm(cpu: &mut CPU, bus: &mut SystemBus, raw_instruction: u32) -> 
 						}
 					}
 
-					cpu.get_mut_cpsr().set_n(alu_out.view_bits::<Lsb0>()[31]);
+					cpu.get_mut_cpsr().set_n(alu_out.bit(31));
 					cpu.get_mut_cpsr().set_z(alu_out == 0);
 					cpu.get_mut_cpsr().set_c(shifter_carry_out);
 				}
@@ -1166,8 +1109,8 @@ pub fn execute_arm(cpu: &mut CPU, bus: &mut SystemBus, raw_instruction: u32) -> 
 					if rd_index == PROGRAM_COUNTER_REGISTER {
 						if cpu.get_operating_mode() != EOperatingMode::UserMode && cpu.get_operating_mode() != EOperatingMode::SystemMode {
 							let old_mode = cpu.get_operating_mode();
-							let spsr = cpu.get_spsr(old_mode).get_value();
-							cpu.get_mut_cpsr().set_value(spsr);
+							let spsr = cpu.get_spsr(old_mode).0;
+							cpu.get_mut_cpsr().0 = spsr;
 							let new_mode = cpu.get_operating_mode();
 
 							cpu.change_operating_mode(new_mode, old_mode);
@@ -1176,7 +1119,7 @@ pub fn execute_arm(cpu: &mut CPU, bus: &mut SystemBus, raw_instruction: u32) -> 
 						}
 					}
 
-					cpu.get_mut_cpsr().set_n(alu_out.view_bits::<Lsb0>()[31]);
+					cpu.get_mut_cpsr().set_n(alu_out.bit(31));
 					cpu.get_mut_cpsr().set_z(alu_out == 0);
 					cpu.get_mut_cpsr().set_c(!borrowed);
 					cpu.get_mut_cpsr().set_v(overflow);
@@ -1191,8 +1134,8 @@ pub fn execute_arm(cpu: &mut CPU, bus: &mut SystemBus, raw_instruction: u32) -> 
 					if rd_index == PROGRAM_COUNTER_REGISTER {
 						if cpu.get_operating_mode() != EOperatingMode::UserMode && cpu.get_operating_mode() != EOperatingMode::SystemMode {
 							let old_mode = cpu.get_operating_mode();
-							let spsr = cpu.get_spsr(old_mode).get_value();
-							cpu.get_mut_cpsr().set_value(spsr);
+							let spsr = cpu.get_spsr(old_mode).0;
+							cpu.get_mut_cpsr().0 = spsr;
 							let new_mode = cpu.get_operating_mode();
 
 							cpu.change_operating_mode(new_mode, old_mode);
@@ -1201,7 +1144,7 @@ pub fn execute_arm(cpu: &mut CPU, bus: &mut SystemBus, raw_instruction: u32) -> 
 						}
 					}
 
-					cpu.get_mut_cpsr().set_n(alu_out.view_bits::<Lsb0>()[31]);
+					cpu.get_mut_cpsr().set_n(alu_out.bit(31));
 					cpu.get_mut_cpsr().set_z(alu_out == 0);
 					cpu.get_mut_cpsr().set_c(borrowed);
 					cpu.get_mut_cpsr().set_v(overflow);
@@ -1215,8 +1158,8 @@ pub fn execute_arm(cpu: &mut CPU, bus: &mut SystemBus, raw_instruction: u32) -> 
 						if rd_index == PROGRAM_COUNTER_REGISTER {
 							if cpu.get_operating_mode() != EOperatingMode::UserMode && cpu.get_operating_mode() != EOperatingMode::SystemMode {
 								let old_mode = cpu.get_operating_mode();
-								let spsr = cpu.get_spsr(old_mode).get_value();
-								cpu.get_mut_cpsr().set_value(spsr);
+								let spsr = cpu.get_spsr(old_mode).0;
+								cpu.get_mut_cpsr().0 = spsr;
 								let new_mode = cpu.get_operating_mode();
 
 								cpu.change_operating_mode(new_mode, old_mode);
@@ -1224,7 +1167,7 @@ pub fn execute_arm(cpu: &mut CPU, bus: &mut SystemBus, raw_instruction: u32) -> 
 								// NOTE: UNPREDICTABLE!
 							}
 						} else {
-							cpu.get_mut_cpsr().set_n(alu_out.view_bits::<Lsb0>()[31]);
+							cpu.get_mut_cpsr().set_n(alu_out.bit(31));
 							cpu.get_mut_cpsr().set_z(alu_out == 0);
 							cpu.get_mut_cpsr().set_c(shifter_carry_out);
 						}
@@ -1237,8 +1180,8 @@ pub fn execute_arm(cpu: &mut CPU, bus: &mut SystemBus, raw_instruction: u32) -> 
 					if s && rd_index == PROGRAM_COUNTER_REGISTER {
 						if cpu.get_operating_mode() != EOperatingMode::UserMode && cpu.get_operating_mode() != EOperatingMode::SystemMode {
 							let old_mode = cpu.get_operating_mode();
-							let spsr = cpu.get_spsr(old_mode).get_value();
-							cpu.get_mut_cpsr().set_value(spsr);
+							let spsr = cpu.get_spsr(old_mode).0;
+							cpu.get_mut_cpsr().0 = spsr;
 							let new_mode = cpu.get_operating_mode();
 
 							cpu.change_operating_mode(new_mode, old_mode);
@@ -1258,8 +1201,8 @@ pub fn execute_arm(cpu: &mut CPU, bus: &mut SystemBus, raw_instruction: u32) -> 
 						if rd_index == PROGRAM_COUNTER_REGISTER {
 							if cpu.get_operating_mode() != EOperatingMode::UserMode && cpu.get_operating_mode() != EOperatingMode::SystemMode {
 								let old_mode = cpu.get_operating_mode();
-								let spsr = cpu.get_spsr(old_mode).get_value();
-								cpu.get_mut_cpsr().set_value(spsr);
+								let spsr = cpu.get_spsr(old_mode).0;
+								cpu.get_mut_cpsr().0 = spsr;
 								let new_mode = cpu.get_operating_mode();
 
 								cpu.change_operating_mode(new_mode, old_mode);
@@ -1267,7 +1210,7 @@ pub fn execute_arm(cpu: &mut CPU, bus: &mut SystemBus, raw_instruction: u32) -> 
 								// NOTE: UNPREDICTABLE!
 							}
 						} else {
-							cpu.get_mut_cpsr().set_n(alu_out.view_bits::<Lsb0>()[31]);
+							cpu.get_mut_cpsr().set_n(alu_out.bit(31));
 							cpu.get_mut_cpsr().set_z(alu_out == 0);
 							cpu.get_mut_cpsr().set_c(shifter_carry_out);
 						}
@@ -1282,8 +1225,8 @@ pub fn execute_arm(cpu: &mut CPU, bus: &mut SystemBus, raw_instruction: u32) -> 
 						if rd_index == PROGRAM_COUNTER_REGISTER {
 							if cpu.get_operating_mode() != EOperatingMode::UserMode && cpu.get_operating_mode() != EOperatingMode::SystemMode {
 								let old_mode = cpu.get_operating_mode();
-								let spsr = cpu.get_spsr(old_mode).get_value();
-								cpu.get_mut_cpsr().set_value(spsr);
+								let spsr = cpu.get_spsr(old_mode).0;
+								cpu.get_mut_cpsr().0 = spsr;
 								let new_mode = cpu.get_operating_mode();
 
 								cpu.change_operating_mode(new_mode, old_mode);
@@ -1291,13 +1234,13 @@ pub fn execute_arm(cpu: &mut CPU, bus: &mut SystemBus, raw_instruction: u32) -> 
 								// NOTE: UNPREDICTABLE!
 							}
 						} else {
-							cpu.get_mut_cpsr().set_n(alu_out.view_bits::<Lsb0>()[31]);
+							cpu.get_mut_cpsr().set_n(alu_out.bit(31));
 							cpu.get_mut_cpsr().set_z(alu_out == 0);
 							cpu.get_mut_cpsr().set_c(shifter_carry_out);
 						}
 					}
 				}
-				_ => {}
+				_ => panic!("IMPOSSIBLE")
 			}
 
 			// NOTE: PC Changed!!!
