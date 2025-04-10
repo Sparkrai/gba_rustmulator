@@ -72,6 +72,8 @@ dependencies = [
 ]
 
 [[package]]
+<<<<<<< HEAD
+=======
 name = "bit_field"
 version = "0.10.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -84,6 +86,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "46afbd2983a5d5a7bd740ccb198caf5b82f45c40c09c0eed36052d91cb92e719"
 
 [[package]]
+>>>>>>> a9c06c2 (Finished bit manipulation refactoring  with nice perf gain)
 name = "bitflags"
 version = "1.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -568,8 +571,11 @@ checksum = "1847abb9cb65d566acd5942e94aea9c8f547ad02c98e1649326fc0e8910b8b1e"
 name = "gba_rustmulator"
 version = "0.1.0"
 dependencies = [
+<<<<<<< HEAD
+=======
  "bit_field",
  "bitfield",
+>>>>>>> a9c06c2 (Finished bit manipulation refactoring  with nice perf gain)
  "bitvec",
  "clipboard",
  "criterion",
@@ -1526,9 +1532,9 @@ checksum = "36ae8932fcfea38b7d3883ae2ab357b0d57a02caaa18ebb4f5ece08beaec4aa0"
 
 [[package]]
 name = "tap"
-version = "1.0.0"
+version = "1.0.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "36474e732d1affd3a6ed582781b3683df3d0563714c59c39591e8ff707cf078e"
+checksum = "55937e1799185b12863d447f42597ed69d9928686b8d88a1df17376a097d8369"
 
 [[package]]
 name = "textwrap"

@@ -9,8 +9,7 @@
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-    modular-bitfield = "0.11"
-    bit_field = "0.10"
+    bitfield = "0.13"
     imgui = "0.7"
     imgui-glium-renderer = "0.7"
     imgui-winit-support = "0.7"
@@ -24,7 +23,8 @@
 [dev-dependencies]
     criterion = "0.3"
     bitvec = "0.21"
-    bitfield = "0.13"
+    modular-bitfield = "0.11"
+    bit_field = "0.10"
 
 [[bench]]
     name = "bit_libraries"

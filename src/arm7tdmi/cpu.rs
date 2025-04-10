@@ -1,4 +1,3 @@
-use bitvec::prelude::*;
 use num_traits::{FromPrimitive, ToPrimitive};
 
 use crate::arm7tdmi::psr::PSR;
@@ -131,7 +130,7 @@ impl CPU {
 	}
 
 	pub fn get_operating_mode(&self) -> EOperatingMode {
-		FromPrimitive::from_u32(self.cpsr.get_mode_bits().load_le()).unwrap()
+		FromPrimitive::from_u8(self.cpsr.get_mode_bits()).unwrap()
 	}
 
 	pub fn change_operating_mode(&mut self, new_mode: EOperatingMode, old_mode: EOperatingMode) {
@@ -228,8 +227,7 @@ impl CPU {
 		}
 
 		let old_operating_mode = self.get_operating_mode();
-		let cpsr_value = self.cpsr.get_value();
-		self.get_mut_spsr(operating_mode).set_value(cpsr_value);
+		self.get_mut_spsr(operating_mode).0 = self.cpsr.0;
 
 		// Change mode
 		self.change_operating_mode(operating_mode, old_operating_mode);

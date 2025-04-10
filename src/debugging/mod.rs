@@ -1,3 +1,4 @@
+use bitfield::Bit;
 use imgui::*;
 
 use crate::arm7tdmi::cpu::CPU;
@@ -5,7 +6,6 @@ use crate::arm7tdmi::EOperatingMode;
 use crate::debugging::disassembling::{disassemble_arm, disassemble_thumb};
 use crate::ppu::{Color, PALETTE_RAM_SIZE};
 use crate::system::{MemoryInterface, SystemBus, PALETTE_RAM_ADDR};
-use bitvec::prelude::*;
 
 pub mod disassembling;
 
@@ -121,12 +121,11 @@ pub fn build_tiles_debug_window(bus: &SystemBus, show_tiles_window: &mut bool, i
 		.position([1400.0, 75.0], Condition::FirstUseEver)
 		.build(ui, || {
 			ui.text("Palette:");
-			for palette_index in 0..(PALETTE_RAM_SIZE / 2) as u32 {
-				if palette_index > 0 && palette_index % 16 != 0 {
+			for (index, color) in bus.ppu.get_palettes_colors().iter().enumerate() {
+				if index > 0 && index % 16 != 0 {
 					ui.same_line(0.0);
 				}
 
-				let color = Color::new(bus.ppu.read_16(PALETTE_RAM_ADDR + palette_index * 2));
 				imgui::ColorButton::new(im_str!(""), [color.get_red(), color.get_green(), color.get_blue(), 1.0])
 					.border(false)
 					.size([6.0, 6.0])
@@ -329,8 +328,8 @@ pub fn build_io_registers_window(bus: &SystemBus, show_io_registers_window: &mut
 			ui.text(im_str!("{}", register_value));
 
 			ui.columns(16, im_str!("Bits"), true);
-			for bit in register_value.view_bits::<Lsb0>() {
-				let mut bit_value = *bit;
+			for bit in 0..16 {
+				let mut bit_value = register_value.bit(bit);
 				ui.checkbox(&*im_str!(""), &mut bit_value);
 				ui.next_column();
 			}

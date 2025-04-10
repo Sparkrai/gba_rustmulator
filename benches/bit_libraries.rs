@@ -93,6 +93,7 @@ fn test_register_modular_bitfield(value: u8) -> u8 {
 fn bench_bit_registers(c: &mut Criterion) {
 	let mut group = c.benchmark_group("Bit Register");
 	for i in (0..=255).step_by(32) {
+		group.bench_with_input(BenchmarkId::new("bitvec", i), &i, |b, i| b.iter(|| test_register_bitvec(*i)));
 		group.bench_with_input(BenchmarkId::new("modular_bitfield", i), &i, |b, i| b.iter(|| test_register_modular_bitfield(*i)));
 		group.bench_with_input(BenchmarkId::new("bitfield", i), &i, |b, i| b.iter(|| test_register_bitfield(*i)));
 	}
@@ -143,6 +144,7 @@ fn test_number_modular_bitfield(value: u8) -> u8 {
 fn bench_bit_number(c: &mut Criterion) {
 	let mut group = c.benchmark_group("Bit Number");
 	for i in (0..=255).step_by(32) {
+		group.bench_with_input(BenchmarkId::new("bitvec", i), &i, |b, i| b.iter(|| test_number_bitvec(*i)));
 		group.bench_with_input(BenchmarkId::new("modular_bitfield", i), &i, |b, i| b.iter(|| test_number_modular_bitfield(*i)));
 		group.bench_with_input(BenchmarkId::new("bitfield", i), &i, |b, i| b.iter(|| test_number_bitfield(*i)));
 	}

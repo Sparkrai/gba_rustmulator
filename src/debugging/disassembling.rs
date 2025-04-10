@@ -1,9 +1,9 @@
+use bitfield::*;
 use num_traits::FromPrimitive;
 
 use crate::arm7tdmi::cpu::CPU;
 use crate::arm7tdmi::{sign_extend, EShiftType};
 use crate::system::{MemoryInterface, SystemBus};
-use bitvec::prelude::*;
 
 pub fn disassemble_instruction(cpu: &CPU, bus: &SystemBus) -> String {
 	// NOTE: Read CPU state
@@ -41,11 +41,11 @@ pub fn get_register_list(instruction: u32, thumb: bool) -> String {
 	let mut regs = String::from("{ ");
 	let bits = if thumb { 8 } else { 16 };
 
-	let reg_list = (((1 << bits) - 1) & instruction).view_bits::<Lsb0>().to_bitvec().into_boxed_bitslice();
+	let reg_list: u16 = instruction.bit_range(bits - 1, 0);
 	for i in 0..bits {
-		if reg_list[i] {
-			if i > 0 && reg_list[i - 1] {
-				if i < bits - 1 && reg_list[i + 1] {
+		if reg_list.bit(i) {
+			if i > 0 && reg_list.bit(i - 1) {
+				if i < bits - 1 && reg_list.bit(i + 1) {
 					continue;
 				} else {
 					regs += &*format!("-R{}", i);
