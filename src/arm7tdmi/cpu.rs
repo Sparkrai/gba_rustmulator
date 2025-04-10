@@ -1,94 +1,76 @@
 use bitvec::prelude::*;
 use num_traits::{FromPrimitive, ToPrimitive};
 
-use crate::arm7tdmi::psr::CPSR;
-use crate::arm7tdmi::{EExceptionType, EOperatingMode};
+use crate::arm7tdmi::psr::PSR;
+use crate::arm7tdmi::{arm, thumb, EExceptionType, EOperatingMode};
+use crate::system::{MemoryInterface, SystemBus};
 
 // Special registers
 pub const STACK_POINTER_REGISTER: u8 = 13;
 pub const LINK_REGISTER_REGISTER: u8 = 14;
 pub const PROGRAM_COUNTER_REGISTER: u8 = 15;
 
+/// Result of a CPU instruction
+pub enum CpuResult {
+	Continue,
+	FlushPipeline,
+}
+
+/// Owns the banked register values
+pub struct BankedRegisters {
+	// UserMode and SystemMode share the same ones
+	banked_r13s: [u32; 6],
+	banked_r14s: [u32; 6],
+
+	banked_user_registers: [u32; 5],
+	banked_fiq_registers: [u32; 5],
+}
+
+impl BankedRegisters {
+	pub fn new() -> Self {
+		Self {
+			banked_r13s: [0; 6],
+			banked_r14s: [0; 6],
+			banked_user_registers: [0; 5],
+			banked_fiq_registers: [0; 5],
+		}
+	}
+}
+
 pub struct CPU {
 	// General Purpose Registers
 	registers: [u32; 16],
 
-	// FIQ Registers
-	r8_fiq: u32,
-	r9_fiq: u32,
-	r10_fiq: u32,
-	r11_fiq: u32,
-	r12_fiq: u32,
-
-	// Stack Pointer Registers
-	r13_fiq: u32,
-	r13_svc: u32,
-	r13_abt: u32,
-	r13_irq: u32,
-	r13_und: u32,
-
-	// Link Registers
-	r14_fiq: u32,
-	r14_svc: u32,
-	r14_abt: u32,
-	r14_irq: u32,
-	r14_und: u32,
-
 	// Current Program Status Register
-	cpsr: CPSR,
+	cpsr: PSR,
 
 	// Saved Program Status Registers
-	spsr_fiq: CPSR,
-	spsr_svc: CPSR,
-	spsr_abt: CPSR,
-	spsr_irq: CPSR,
-	spsr_und: CPSR,
+	spsr_fiq: PSR,
+	spsr_svc: PSR,
+	spsr_abt: PSR,
+	spsr_irq: PSR,
+	spsr_und: PSR,
+
+	// Banked Registers
+	banks: BankedRegisters,
 }
 
 impl CPU {
 	pub fn new() -> Self {
 		Self {
 			registers: [0; 16],
-			r8_fiq: 0,
-			r9_fiq: 0,
-			r10_fiq: 0,
-			r11_fiq: 0,
-			r12_fiq: 0,
-			r13_fiq: 0,
-			r13_svc: 0,
-			r13_abt: 0,
-			r13_irq: 0,
-			r13_und: 0,
-			r14_fiq: 0,
-			r14_svc: 0,
-			r14_abt: 0,
-			r14_irq: 0,
-			r14_und: 0,
-			cpsr: CPSR::new(),
-			spsr_fiq: CPSR::new(),
-			spsr_svc: CPSR::new(),
-			spsr_abt: CPSR::new(),
-			spsr_irq: CPSR::new(),
-			spsr_und: CPSR::new(),
+			cpsr: PSR::new(),
+			spsr_fiq: PSR::new(),
+			spsr_svc: PSR::new(),
+			spsr_abt: PSR::new(),
+			spsr_irq: PSR::new(),
+			spsr_und: PSR::new(),
+			banks: BankedRegisters::new(),
 		}
 	}
 
-	pub fn get_registers(&self) -> Box<[u32]> {
-		let mode = self.get_operating_mode();
-		match mode {
-			EOperatingMode::FiqMode => [
-				&self.registers[0..8],
-				&[self.r8_fiq, self.r9_fiq, self.r10_fiq, self.r11_fiq, self.r12_fiq, self.r13_fiq, self.r14_fiq],
-				&[self.registers[15]],
-			]
-			.concat()
-			.into_boxed_slice(),
-			EOperatingMode::IrqMode => [&self.registers[0..13], &[self.r13_irq, self.r14_irq], &[self.registers[15]]].concat().into_boxed_slice(),
-			EOperatingMode::SupervisorMode => [&self.registers[0..13], &[self.r13_svc, self.r14_svc], &[self.registers[15]]].concat().into_boxed_slice(),
-			EOperatingMode::AbortMode => [&self.registers[0..13], &[self.r13_abt, self.r14_abt], &[self.registers[15]]].concat().into_boxed_slice(),
-			EOperatingMode::UndefinedMode => [&self.registers[0..13], &[self.r13_und, self.r14_und], &[self.registers[15]]].concat().into_boxed_slice(),
-			_ => self.registers.to_vec().into_boxed_slice(),
-		}
+	pub fn get_registers(&self) -> &[u32] {
+		&self.registers
 	}
 
 	pub fn get_current_pc(&self) -> u32 {
@@ -107,116 +89,26 @@ impl CPU {
 
 	pub fn get_register_value(&self, index: u8) -> u32 {
 		if index == PROGRAM_COUNTER_REGISTER {
-			let pc_offset = if self.get_cpsr().get_t() { 4 } else { 8 };
+			let pc_offset = if self.cpsr.get_t() { 4 } else { 8 };
 			return self.registers[index as usize] + pc_offset;
 		}
 
-		let mode = self.get_operating_mode();
-		match mode {
-			EOperatingMode::FiqMode => match index {
-				8 => self.r8_fiq,
-				9 => self.r9_fiq,
-				10 => self.r10_fiq,
-				11 => self.r11_fiq,
-				12 => self.r12_fiq,
-				13 => self.r13_fiq,
-				14 => self.r14_fiq,
-				_ => {
-					return self.registers[index as usize];
-				}
-			},
-			EOperatingMode::IrqMode => match index {
-				13 => self.r13_irq,
-				14 => self.r14_irq,
-				_ => {
-					return self.registers[index as usize];
-				}
-			},
-			EOperatingMode::SupervisorMode => match index {
-				13 => self.r13_svc,
-				14 => self.r14_svc,
-				_ => {
-					return self.registers[index as usize];
-				}
-			},
-			EOperatingMode::AbortMode => match index {
-				13 => self.r13_abt,
-				14 => self.r14_abt,
-				_ => {
-					return self.registers[index as usize];
-				}
-			},
-			EOperatingMode::UndefinedMode => match index {
-				13 => self.r13_und,
-				14 => self.r14_und,
-				_ => {
-					return self.registers[index as usize];
-				}
-			},
-			_ => {
-				return self.registers[index as usize];
-			}
-		}
+		self.registers[index as usize]
 	}
 
 	pub fn set_register_value(&mut self, index: u8, value: u32) {
-		let mode = self.get_operating_mode();
-		match mode {
-			EOperatingMode::FiqMode => match index {
-				8 => self.r8_fiq = value,
-				9 => self.r9_fiq = value,
-				10 => self.r10_fiq = value,
-				11 => self.r11_fiq = value,
-				12 => self.r12_fiq = value,
-				13 => self.r13_fiq = value,
-				14 => self.r14_fiq = value,
-				_ => {
-					self.registers[index as usize] = value;
-				}
-			},
-			EOperatingMode::IrqMode => match index {
-				13 => self.r13_irq = value,
-				14 => self.r14_irq = value,
-				_ => {
-					self.registers[index as usize] = value;
-				}
-			},
-			EOperatingMode::SupervisorMode => match index {
-				13 => self.r13_svc = value,
-				14 => self.r14_svc = value,
-				_ => {
-					self.registers[index as usize] = value;
-				}
-			},
-			EOperatingMode::AbortMode => match index {
-				13 => self.r13_abt = value,
-				14 => self.r14_abt = value,
-				_ => {
-					self.registers[index as usize] = value;
-				}
-			},
-			EOperatingMode::UndefinedMode => match index {
-				13 => self.r13_und = value,
-				14 => self.r14_und = value,
-				_ => {
-					self.registers[index as usize] = value;
-				}
-			},
-			_ => {
-				self.registers[index as usize] = value;
-			}
-		}
+		self.registers[index as usize] = value;
 	}
 
-	pub fn get_cpsr(&self) -> &CPSR {
+	pub fn get_cpsr(&self) -> &PSR {
 		&self.cpsr
 	}
 
-	pub fn get_mut_cpsr(&mut self) -> &mut CPSR {
+	pub fn get_mut_cpsr(&mut self) -> &mut PSR {
 		&mut self.cpsr
 	}
 
-	pub fn get_spsr(&self, mode: EOperatingMode) -> &CPSR {
+	pub fn get_spsr(&self, mode: EOperatingMode) -> &PSR {
 		match mode {
 			EOperatingMode::FiqMode => &self.spsr_fiq,
 			EOperatingMode::IrqMode => &self.spsr_irq,
@@ -227,7 +119,7 @@ impl CPU {
 		}
 	}
 
-	pub fn get_mut_spsr(&mut self, mode: EOperatingMode) -> &mut CPSR {
+	pub fn get_mut_spsr(&mut self, mode: EOperatingMode) -> &mut PSR {
 		match mode {
 			EOperatingMode::FiqMode => &mut self.spsr_fiq,
 			EOperatingMode::IrqMode => &mut self.spsr_irq,
@@ -242,8 +134,55 @@ impl CPU {
 		FromPrimitive::from_u32(self.cpsr.get_mode_bits().load_le()).unwrap()
 	}
 
-	pub fn set_operating_mode(&mut self, mode: EOperatingMode) {
-		self.cpsr.set_mode_bits(mode.to_u8().unwrap());
+	pub fn change_operating_mode(&mut self, new_mode: EOperatingMode, old_mode: EOperatingMode) {
+		self.cpsr.set_mode_bits(new_mode.to_u8().unwrap());
+
+		let new_index = match new_mode {
+			EOperatingMode::UserMode => 0,
+			EOperatingMode::FiqMode => 1,
+			EOperatingMode::IrqMode => 2,
+			EOperatingMode::SupervisorMode => 3,
+			EOperatingMode::AbortMode => 4,
+			EOperatingMode::UndefinedMode => 5,
+			EOperatingMode::SystemMode => 0,
+		};
+
+		let old_index = match old_mode {
+			EOperatingMode::UserMode => 0,
+			EOperatingMode::FiqMode => 1,
+			EOperatingMode::IrqMode => 2,
+			EOperatingMode::SupervisorMode => 3,
+			EOperatingMode::AbortMode => 4,
+			EOperatingMode::UndefinedMode => 5,
+			EOperatingMode::SystemMode => 0,
+		};
+
+		if new_index == old_index {
+			return;
+		}
+
+		let r13 = self.registers[13];
+		self.registers[13] = self.banks.banked_r13s[new_index];
+		self.banks.banked_r13s[old_index] = r13;
+
+		let r14 = self.registers[14];
+		self.registers[14] = self.banks.banked_r14s[new_index];
+		self.banks.banked_r14s[old_index] = r14;
+
+		// Fiq Mode Registers
+		if new_mode == EOperatingMode::FiqMode {
+			for (i, fiq_reg) in self.banks.banked_fiq_registers.iter().cloned().enumerate() {
+				let reg = self.registers[i + 8];
+				self.registers[i + 8] = fiq_reg;
+				self.banks.banked_user_registers[i] = reg;
+			}
+		} else if old_mode == EOperatingMode::FiqMode {
+			for (i, fiq_reg) in self.banks.banked_user_registers.iter().cloned().enumerate() {
+				let reg = self.registers[i + 8];
+				self.registers[i + 8] = fiq_reg;
+				self.banks.banked_fiq_registers[i] = reg;
+			}
+		}
 	}
 
 	pub fn exception(&mut self, exception_type: EExceptionType) {
@@ -288,11 +227,12 @@ impl CPU {
 			}
 		}
 
+		let old_operating_mode = self.get_operating_mode();
 		let cpsr_value = self.cpsr.get_value();
 		self.get_mut_spsr(operating_mode).set_value(cpsr_value);
 
 		// Change mode
-		self.set_operating_mode(operating_mode);
+		self.change_operating_mode(operating_mode, old_operating_mode);
 
 		self.cpsr.set_t(false);
 		if exception_type == EExceptionType::Reset || exception_type == EExceptionType::Fiq {
@@ -304,5 +244,24 @@ impl CPU {
 		self.set_register_value(LINK_REGISTER_REGISTER, self.get_current_pc() + return_address_offset);
 
 		self.set_register_value(PROGRAM_COUNTER_REGISTER, exception_vector_address);
+	}
+
+	/// Step the CPU by executing 1 instruction
+	// TODO: Calculate cycles and update system
+	pub fn step(&mut self, bus: &mut SystemBus) {
+		// NOTE: Read CPU state
+		let pc = self.get_current_pc();
+		let result = if self.get_cpsr().get_t() {
+			let instruction = bus.read_16(pc);
+			thumb::execute_thumb(instruction, self, bus)
+		} else {
+			let instruction = bus.read_32(pc);
+			arm::execute_arm(self, bus, instruction)
+		};
+
+		match result {
+			CpuResult::Continue => self.set_register_value(PROGRAM_COUNTER_REGISTER, self.get_current_pc() + self.get_instruction_length()),
+			CpuResult::FlushPipeline => self.set_register_value(PROGRAM_COUNTER_REGISTER, self.get_current_pc() & !0x1),
+		}
 	}
 }

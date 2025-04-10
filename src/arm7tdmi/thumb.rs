@@ -1,11 +1,11 @@
 use bitvec::prelude::*;
 use num_traits::PrimInt;
 
-use crate::arm7tdmi::cpu::{CPU, LINK_REGISTER_REGISTER, PROGRAM_COUNTER_REGISTER, STACK_POINTER_REGISTER};
+use crate::arm7tdmi::cpu::{CpuResult, CPU, LINK_REGISTER_REGISTER, PROGRAM_COUNTER_REGISTER, STACK_POINTER_REGISTER};
 use crate::arm7tdmi::{cond_passed, load_32_from_memory, sign_extend, EExceptionType, EShiftType};
 use crate::system::{MemoryInterface, SystemBus};
 
-pub fn operate_thumb(instruction: u16, cpu: &mut CPU, bus: &mut SystemBus) {
+pub fn execute_thumb(instruction: u16, cpu: &mut CPU, bus: &mut SystemBus) -> CpuResult {
 	// ADD / SUB register
 	if (0xf800 & instruction) == 0x1800 {
 		let is_sub = (0x0200 & instruction) != 0;
@@ -401,7 +401,7 @@ pub fn operate_thumb(instruction: u16, cpu: &mut CPU, bus: &mut SystemBus) {
 		// NOTE: Enforce alignment
 		let address = if cpu.get_cpsr().get_t() { rm & !0x1 } else { rm & !0x3 };
 		cpu.set_register_value(PROGRAM_COUNTER_REGISTER, address);
-		return;
+		return CpuResult::FlushPipeline;
 	} else if (0xfc00 & instruction) == 0x4400 {
 		// Hi register ALUs
 		let rm = cpu.get_register_value(((instruction & 0x0078) >> 3) as u8);
@@ -421,10 +421,17 @@ pub fn operate_thumb(instruction: u16, cpu: &mut CPU, bus: &mut SystemBus) {
 				cpu.get_mut_cpsr().set_z(alu_out == 0);
 				cpu.get_mut_cpsr().set_c(!borrowed);
 				cpu.get_mut_cpsr().set_v(overflow);
+
+				return CpuResult::Continue;
 			}
 			// MOV
 			0x2 => cpu.set_register_value(rd_index, rm),
 			_ => panic!("ERROR!!!"),
+		}
+
+		// NOTE: PC Changed!!!
+		if rd_index == PROGRAM_COUNTER_REGISTER {
+			return CpuResult::FlushPipeline;
 		}
 	} else if (0xf800 & instruction) == 0x4800 {
 		// LDR PC relative
@@ -651,7 +658,7 @@ pub fn operate_thumb(instruction: u16, cpu: &mut CPU, bus: &mut SystemBus) {
 
 		// NOTE: PC Changed!!!
 		if pop && r {
-			return;
+			return CpuResult::FlushPipeline;
 		}
 	} else if (0xf000 & instruction) == 0xc000 {
 		// LDMIA/STMIA
@@ -669,6 +676,8 @@ pub fn operate_thumb(instruction: u16, cpu: &mut CPU, bus: &mut SystemBus) {
 			if l {
 				let value = load_32_from_memory(bus, address);
 				cpu.set_register_value(PROGRAM_COUNTER_REGISTER, value);
+
+				return CpuResult::FlushPipeline;
 			} else {
 				let value = cpu.get_register_value(PROGRAM_COUNTER_REGISTER) + 2;
 				bus.write_32(address, value);
@@ -712,7 +721,7 @@ pub fn operate_thumb(instruction: u16, cpu: &mut CPU, bus: &mut SystemBus) {
 	} else if (0xff00 & instruction) == 0xdf00 {
 		// SWI Software Interrupt Exception
 		cpu.exception(EExceptionType::SoftwareInterrupt);
-		return;
+		return CpuResult::FlushPipeline;
 	} else if (0xf000 & instruction) == 0xd000 {
 		// Conditional Branch
 		let cond = ((0x0f00 & instruction) >> 8) as u8;
@@ -723,7 +732,7 @@ pub fn operate_thumb(instruction: u16, cpu: &mut CPU, bus: &mut SystemBus) {
 				PROGRAM_COUNTER_REGISTER,
 				(cpu.get_register_value(PROGRAM_COUNTER_REGISTER) as i32).wrapping_add(offset) as u32,
 			);
-			return;
+			return CpuResult::FlushPipeline;
 		}
 	} else if (0xf800 & instruction) == 0xe000 {
 		// Unconditional Branch
@@ -732,7 +741,7 @@ pub fn operate_thumb(instruction: u16, cpu: &mut CPU, bus: &mut SystemBus) {
 			PROGRAM_COUNTER_REGISTER,
 			(cpu.get_register_value(PROGRAM_COUNTER_REGISTER) as i32).wrapping_add(offset) as u32,
 		);
-		return;
+		return CpuResult::FlushPipeline;
 	} else if (0xf000 & instruction) == 0xf000 {
 		// BL
 		let h = (0x0800 & instruction) != 0;
@@ -747,7 +756,9 @@ pub fn operate_thumb(instruction: u16, cpu: &mut CPU, bus: &mut SystemBus) {
 			cpu.set_register_value(PROGRAM_COUNTER_REGISTER, lr.wrapping_add(offset << 1) as u32);
 			// NOTE: Address of next instruction
 			cpu.set_register_value(LINK_REGISTER_REGISTER, ((pc - 2) | 0x1) as u32);
-			return;
+			return CpuResult::FlushPipeline;
 		}
 	}
+
+	CpuResult::Continue
 }

@@ -36,7 +36,7 @@ fn main() {
 	File::open("data/bios.gba").expect("Bios couldn't be opened!").read_to_end(&mut bios_data).unwrap();
 
 	let mut cartridge_data = Vec::<u8>::new();
-	if File::open("data/tests/ppu/shades.gba")
+	if File::open("data/demos/sbb_aff.gba")
 		.expect("Cartridge couldn't be opened!")
 		.read_to_end(&mut cartridge_data)
 		.is_ok()
@@ -79,6 +79,10 @@ fn main() {
 
 		event_loop.run(move |event, _, control_flow| {
 			*control_flow = ControlFlow::Poll;
+
+			let gl_window = display.gl_window();
+			platform.handle_event(imgui.io_mut(), gl_window.window(), &event);
+
 			match event {
 				Event::NewEvents(_) => {
 					// Lock FPS
@@ -104,7 +108,7 @@ fn main() {
 							current_cycle = (current_cycle + 1) % CYCLES_PER_FRAME;
 							bus.ppu.step(current_cycle);
 
-							arm7tdmi::decode(&mut cpu, &mut bus);
+							cpu.step(&mut bus);
 						} else {
 							for _ in 0..=CYCLES_PER_FRAME {
 								current_cycle = (current_cycle + 1) % CYCLES_PER_FRAME;
@@ -137,7 +141,7 @@ fn main() {
 										writeln!(&mut flow, "{:#X}: {}", cpu.get_current_pc(), disassemble_instruction(&cpu, &bus)).unwrap();
 									}
 
-									arm7tdmi::decode(&mut cpu, &mut bus);
+									cpu.step(&mut bus);
 
 									// NOTE: Breakpoint
 									if breakpoint_set && cpu.get_current_pc() == breakpoint_address {
@@ -326,8 +330,6 @@ fn main() {
 										for x in 0..8 {
 											for y in 0..8 {
 												let tile_pixel = x + y * 8;
-												let palette_entry = bus.ppu.read_8(VRAM_ADDR + tile_address as u32 + tile_pixel) as usize;
-
 												let pixel_index = (tx * 8 + ty * 64 * tiles_x + (x + y * width as u32) as usize) * 3;
 
 												let color;
@@ -416,10 +418,7 @@ fn main() {
 						}
 					}
 				}
-				_ => {
-					let gl_window = display.gl_window();
-					platform.handle_event(imgui.io_mut(), gl_window.window(), &event);
-				}
+				_ => {}
 			}
 		});
 	} else {

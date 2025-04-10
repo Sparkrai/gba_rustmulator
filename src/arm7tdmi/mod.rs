@@ -73,34 +73,8 @@ pub fn load_32_from_memory(bus: &SystemBus, address: u32) -> u32 {
 		data = bus.read_32(address);
 	} else {
 		// NOTE: Forced alignment and rotation of data! (UNPREDICTABLE)
-		data = bus.read_32(address & !0x0000_0003).rotate_right((address & 0x0000_0003) * 8);
+		data = bus.read_32(address & !0x3).rotate_right((address & 0x3) * 8);
 	}
 
 	data
-}
-
-pub fn decode(cpu: &mut CPU, bus: &mut SystemBus) {
-	// NOTE: Read CPU state
-	let pc = cpu.get_current_pc();
-	if cpu.get_cpsr().get_t() {
-		let instruction = bus.read_16(pc);
-		thumb::operate_thumb(instruction, cpu, bus);
-
-		if cpu.get_current_pc() == pc {
-			cpu.set_register_value(PROGRAM_COUNTER_REGISTER, cpu.get_current_pc() + 2);
-		} else {
-			// NOTE: Force alignment!!!
-			cpu.set_register_value(PROGRAM_COUNTER_REGISTER, cpu.get_current_pc() & !0x1);
-		}
-	} else {
-		let instruction = bus.read_32(pc);
-		arm::operate_arm(cpu, bus, instruction);
-
-		if cpu.get_current_pc() == pc {
-			cpu.set_register_value(PROGRAM_COUNTER_REGISTER, cpu.get_current_pc() + 4);
-		} else {
-			// NOTE: Force alignment!!!
-			cpu.set_register_value(PROGRAM_COUNTER_REGISTER, cpu.get_current_pc() & !0x1);
-		}
-	}
 }

@@ -380,9 +380,10 @@ impl PPU {
 	/// Calculate PPU status based on provided cycle
 	/// Returns (h_blank_irq, v_blank_irq)
 	pub fn step(&mut self, current_cycle: u32) -> (bool, bool) {
-		self.set_vcount((current_cycle / 1232) as u8);
+		let v_count = (current_cycle / 1232) as u8;
+		self.set_vcount(v_count);
 
-		if self.get_vcount() == self.disp_stat.get_v_count_trigger() {
+		if v_count == self.disp_stat.get_v_count_trigger() {
 			self.disp_stat.set_v_counter_flag(true);
 		} else {
 			self.disp_stat.set_v_counter_flag(false);
