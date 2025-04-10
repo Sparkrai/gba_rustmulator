@@ -61,6 +61,7 @@ pub const BLD_ALPHA_ADDRESS: u32 = 0x52;
 pub const BLD_Y_LO_ADDRESS: u32 = 0x54;
 //pub const BLD_Y_HI_ADDRESS: u32 = 0x56;
 
+#[repr(u8)]
 #[derive(Debug, Copy, Clone, FromPrimitive, ToPrimitive, PartialEq)]
 pub enum EVideoMode {
 	Mode0,
@@ -71,6 +72,7 @@ pub enum EVideoMode {
 	Mode5,
 }
 
+#[repr(u8)]
 #[derive(Debug, Copy, Clone, FromPrimitive, ToPrimitive, PartialEq)]
 pub enum EBlendMode {
 	None,
@@ -79,6 +81,7 @@ pub enum EBlendMode {
 	Darken,
 }
 
+#[repr(u8)]
 #[derive(Debug, Copy, Clone, FromPrimitive, ToPrimitive, PartialEq)]
 pub enum ESpriteMode {
 	Normal,
@@ -142,83 +145,81 @@ impl Color {
 	}
 }
 
-bitfield! {
-	u8;
-	/// Key Status (R)
-	pub struct WindowDasdimensions([u16]);
-	impl Debug;
-	pub _, get_x1: 15, 8;
-	pub _, get_x2: 7, 0;
-	pub _, get_y1: 31, 24;
-	pub _, get_y2: 23, 16;
-}
+// bitfield! {
+// 	u8;
+// 	/// Key Status (R)
+// 	pub struct WindowDasdimensions([u16]);
+// 	impl Debug;
+// 	pub _, get_x1: 15, 8;
+// 	pub _, get_x2: 7, 0;
+// 	pub _, get_y1: 31, 24;
+// 	pub _, get_y2: 23, 16;
+// }
 
 pub struct WindowDimensions {
-	h: Gba16BitRegister,
-	v: Gba16BitRegister,
+	h: u16,
+	v: u16,
 }
 
 impl WindowDimensions {
 	pub fn new() -> Self {
 		Self {
-			h: bitarr![Lsb0, u16; 0; 16],
-			v: bitarr![Lsb0, u16; 0; 16],
+			h: 0,
+			v: 0,
 		}
 	}
 
 	pub fn get_x1(&self) -> u8 {
-		self.h[8..16].load_le::<u8>()
+		self.h.bit_range(15, 8)
 	}
 
 	pub fn get_x2(&self) -> u8 {
-		self.h[0..8].load_le::<u8>()
+		self.h.bit_range(7, 0)
 	}
 
 	pub fn get_y1(&self) -> u8 {
-		self.h[8..16].load_le::<u8>()
+		self.v.bit_range(15, 8)
 	}
 
 	pub fn get_y2(&self) -> u8 {
-		self.h[0..8].load_le::<u8>()
+		self.v.bit_range(7, 0)
 	}
 }
 
-pub struct SpriteEntry<'a>(&'a Gba8BitSlice);
 
-impl<'a> SpriteEntry<'a> {
-	pub fn new(registers: &'a Gba8BitSlice) -> Self {
-		Self { 0: registers }
-	}
+bitfield!{
+	pub struct SpriteEntry([u8]);
+	impl Debug;
+	u8;
+	pub _, get_y_coord: 7, 0;
+	pub _, get_is_affine: 8;
+	pub _, get_is_virtual_double_sized: 9;
+	pub from into ESpriteMode, _, get_sprite_mode: 0xb, 0xa;
+	pub _, get_is_mosaic: 0xc;
+	pub _, get_is_256_palette: 0xd;
+	pub u16, _, get_x_coord: 0x18, 0x10;
+	pub _, get_affine_matrix_index: 0x1d, 0x19;
+	pub _, get_h_flip: 0x1c;
+	pub _, get_v_flip: 0x1d;
+	pub _, get_tile_index: 0x29, 0x20;
+	pub _, get_priority: 0x2b, 0x2a;
+	pub _, get_palette_number: 0x2f, 0x2c;
+}
 
-	pub fn get_y_coord(&self) -> i32 {
-		let y = self.0[0..8].load_le::<u8>() as i32;
-		// NOTE: Check if it's wrapping!!!
-		if y >= (160) {
-			y - (1 << 8)
-		} else {
-			y
-		}
-	}
+impl<T> SpriteEntry<T> {
+	// pub fn get_y_coord(&self) -> i32 {
+	// 	let y = self.0[0..8].load_le::<u8>() as i32;
+	// 	// NOTE: Check if it's wrapping!!!
+	// 	if y >= (160) {
+	// 		y - (1 << 8)
+	// 	} else {
+	// 		y
+	// 	}
+	// }
 
-	pub fn get_is_affine(&self) -> bool {
-		self.0[8]
-	}
-
-	pub fn get_is_virtual_double_sized(&self) -> bool {
-		self.0[9]
-	}
-
-	pub fn get_sprite_mode(&self) -> ESpriteMode {
-		FromPrimitive::from_u8(self.0[0xa..=0xb].load_le()).unwrap()
-	}
-
-	pub fn get_is_mosaic(&self) -> bool {
-		self.0[0xc]
-	}
-
-	pub fn get_is_256_palette(&self) -> bool {
-		self.0[0xd]
-	}
+	// pub fn get_sprite_mode(&self) -> ESpriteMode {
+	// 	FromPrimitive::from_u8(self.0[0xa..=0xb].load_le()).unwrap()
+	// }
 
 	pub fn get_size(&self) -> (usize, usize) {
 		let value = self.0[0xe..=0xf].load_le::<u8>() << 2 | self.0[0x1e..=0x1f].load_le::<u8>();
@@ -240,33 +241,9 @@ impl<'a> SpriteEntry<'a> {
 		}
 	}
 
-	pub fn get_x_coord(&self) -> i32 {
-		sign_extend(self.0[0x10..0x19].load_le::<u16>(), 9) as i32
-	}
-
-	pub fn get_affine_matrix_index(&self) -> usize {
-		self.0[0x19..0x1d].load_le()
-	}
-
-	pub fn get_h_flip(&self) -> bool {
-		self.0[0x1c]
-	}
-
-	pub fn get_v_flip(&self) -> bool {
-		self.0[0x1d]
-	}
-
-	pub fn get_tile_index(&self) -> usize {
-		self.0[0x20..=0x29].load_le()
-	}
-
-	pub fn get_priority(&self) -> u8 {
-		self.0[0x2a..=0x2b].load_le()
-	}
-
-	pub fn get_palette_number(&self) -> u8 {
-		self.0[0x2c..=0x2f].load_le()
-	}
+	// pub fn get_x_coord(&self) -> i32 {
+	// 	sign_extend(self.0[0x10..0x19].load_le::<u16>(), 9) as i32
+	// }
 }
 
 fn compute_vram_address(address: u32) -> usize {
@@ -689,158 +666,52 @@ impl PPU {
 	}
 }
 
-pub struct DisplayControl {
-	data: Gba16BitRegister,
+bitfield!{
+	// LCD Control (Read/Write)
+	pub struct DisplayControl(u16);
+	impl Debug;
+	pub u8, from into EVideoMode, _, get_bg_mode: 2, 0;
+	pub _, get_display_frame_1: 4;
+	pub _, get_h_blank_interval_free: 5;
+	pub _, get_sprite_1d_mapping: 6;
+	pub _, get_forced_blank: 7;
+	pub _, get_screen_display_bg0: 8;
+	pub _, get_screen_display_bg1: 9;
+	pub _, get_screen_display_bg2: 10;
+	pub _, get_screen_display_bg3: 11;
+	pub _, get_screen_display_sprites: 12;
+	pub _, get_window0_display: 13;
+	pub _, get_window1_display: 14;
+	pub _, get_sprite_window_display: 15;
 }
 
-impl DisplayControl {
-	pub fn new() -> Self {
-		Self { data: bitarr![Lsb0, u16; 0; 16] }
-	}
-
-	pub fn get_bg_mode(&self) -> Option<EVideoMode> {
-		FromPrimitive::from_u8(self.data[0..=2].load_le())
-	}
-
-	pub fn get_display_frame_1(&self) -> bool {
-		self.data[4]
-	}
-
-	pub fn get_h_blank_interval_free(&self) -> bool {
-		self.data[5]
-	}
-
-	pub fn get_sprite_1d_mapping(&self) -> bool {
-		self.data[6]
-	}
-
-	pub fn get_forced_blank(&self) -> bool {
-		self.data[7]
-	}
-
-	pub fn get_screen_display_bg(&self, index: usize) -> bool {
-		self.data[8 + index]
-	}
-
-	pub fn get_screen_display_bg0(&self) -> bool {
-		self.data[8]
-	}
-
-	pub fn get_screen_display_bg1(&self) -> bool {
-		self.data[9]
-	}
-
-	pub fn get_screen_display_bg2(&self) -> bool {
-		self.data[10]
-	}
-
-	pub fn get_screen_display_bg3(&self) -> bool {
-		self.data[11]
-	}
-
-	pub fn get_screen_display_sprites(&self) -> bool {
-		self.data[12]
-	}
-
-	pub fn get_window0_display(&self) -> bool {
-		self.data[13]
-	}
-
-	pub fn get_window1_display(&self) -> bool {
-		self.data[14]
-	}
-
-	pub fn get_sprite_window_display(&self) -> bool {
-		self.data[15]
-	}
+bitfield!{
+	// General LCD Status (Read/Write)
+	pub struct DisplayStatus(u16);
+	impl Debug;
+	u8;
+	pub from into EVideoMode, _, get_bg_mode: 2, 0;
+	pub set_v_blank, get_v_blank: 0;
+	pub set_h_blank, get_h_blank: 1;
+	pub set_v_counter_flag, get_v_counter_flag: 2;
+	pub _, get_v_blank_irq: 3;
+	pub _, get_h_blank_irq: 4;
+	pub _, get_v_counter_irq: 5;
+	pub _, get_v_count_trigger: 15, 8;
 }
 
-pub struct DisplayStatus {
-	data: Gba16BitRegister,
-}
-
-impl DisplayStatus {
-	pub fn new() -> Self {
-		Self { data: bitarr![Lsb0, u16; 0; 16] }
-	}
-
-	pub fn get_v_blank(&self) -> bool {
-		self.data[0]
-	}
-
-	pub fn set_v_blank(&mut self, value: bool) {
-		self.data.set(0, value);
-	}
-
-	pub fn get_h_blank(&self) -> bool {
-		self.data[1]
-	}
-
-	pub fn set_h_blank(&mut self, value: bool) {
-		self.data.set(1, value);
-	}
-
-	pub fn get_v_counter_flag(&self) -> bool {
-		self.data[2]
-	}
-
-	pub fn set_v_counter_flag(&mut self, value: bool) {
-		self.data.set(2, value);
-	}
-
-	pub fn get_v_blank_irq(&self) -> bool {
-		self.data[3]
-	}
-
-	pub fn get_h_blank_irq(&self) -> bool {
-		self.data[4]
-	}
-
-	pub fn get_v_counter_irq(&self) -> bool {
-		self.data[5]
-	}
-
-	pub fn get_v_count_trigger(&self) -> u8 {
-		self.data[8..16].load_le()
-	}
-}
-
-struct BackgroundControl {
-	data: Gba16BitRegister,
-}
-
-impl BackgroundControl {
-	pub fn new() -> Self {
-		Self { data: bitarr![Lsb0, u16; 0; 16] }
-	}
-
-	pub fn get_bg_priority(&self) -> u8 {
-		self.data[0..=1].load_le()
-	}
-
-	pub fn get_tile_data_address(&self) -> usize {
-		self.data[2..=3].load_le::<usize>() * 0x4000
-	}
-
-	pub fn get_mosaic(&self) -> bool {
-		self.data[6]
-	}
-
-	pub fn get_is_256_palette(&self) -> bool {
-		self.data[7]
-	}
-
-	pub fn get_map_data_address(&self) -> usize {
-		self.data[8..=12].load_le::<usize>() * 0x800
-	}
-
-	pub fn get_overflow_wraparound(&self) -> bool {
-		self.data[13]
-	}
-
-	pub fn get_size(&self) -> u8 {
-		self.data[14..=15].load_le()
-	}
+bitfield!{
+	// BG Control (R/W)
+	pub struct BackgroundControl(u16);
+	impl Debug;
+	u8;
+	pub _, get_bg_priority: 1, 0;
+	pub _, get_tile_data_address: 3, 2;
+	pub _, get_mosaic: 6;
+	pub _, get_is_256_palette: 7;
+	pub _, get_map_data_address: 12, 8;
+	pub _, get_overflow_wraparound: 13;
+	pub _, get_size: 15, 14;
 }
 
 pub struct BackgroundAffineMatrix {
@@ -889,63 +760,45 @@ impl BackgroundAffineMatrix {
 	}
 }
 
-pub struct FixedPoint16Bit {
-	data: Gba16BitRegister,
-}
-
-impl FixedPoint16Bit {
-	pub fn new() -> Self {
-		Self { data: bitarr![Lsb0, u16; 0; 16] }
-	}
-
-	pub fn with_value(value: u16) -> Self {
-		Self {
-			data: Gba16BitRegister::new([value; 1]),
-		}
-	}
-
-	pub fn get_fractional(&self) -> u8 {
-		self.data[0..=7].load_le()
-	}
-
-	pub fn get_integer(&self) -> i32 {
-		self.data[8..=0xf].load_le::<u8>() as i8 as i32
-	}
-
-	pub fn get_value(&self) -> i32 {
-		self.data.load_le::<u16>() as i16 as i32
-	}
+bitfield!{
+	pub struct FixedPoint16Bit(u16);
+	impl Debug;
+	pub u8, _, get_fractional: 7, 0;
+	pub i8, into i32, _, get_integer: 0xe, 8;
+	pub i16, into i32, _, get_value: 0xe, 0;
 }
 
 pub struct FixedPoint28Bit {
-	data: Gba32BitRegister,
+	data: u32,
 }
 
 impl FixedPoint28Bit {
 	pub fn new() -> Self {
-		Self { data: bitarr![Lsb0, u32; 0; 32] }
+		Self { data: 0 }
 	}
 
 	pub fn with_value(value: u32) -> Self {
 		Self {
-			data: Gba32BitRegister::new([value; 1]),
+			data: value.bit_range(27, 0),
 		}
 	}
 
 	pub fn get_fractional(&self) -> u8 {
-		self.data[0..=7].load_le()
+		self.data.bit_range(7, 0)
 	}
 
 	pub fn get_integer(&self) -> i32 {
-		sign_extend(self.data[8..=27].load_le::<u32>(), 20)
+		let result: u32 = self.data.bit_range(27, 8);
+		sign_extend(result, 20)
 	}
 
 	pub fn get_value(&self) -> i32 {
-		sign_extend(self.data[0..=27].load_le::<u32>(), 28)
+		let result: u32 = self.data.bit_range(27, 0);
+		sign_extend(result, 28)
 	}
 
 	pub fn set_value(&mut self, value: u32) {
-		self.data[0..=27].store_le(value);
+		self.data.bit_range(27, 0, value);
 	}
 }
 
