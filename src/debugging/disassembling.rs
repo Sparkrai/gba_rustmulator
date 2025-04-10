@@ -273,32 +273,70 @@ pub fn disassemble_arm(instruction: u32) -> String {
 	} else if (0x0f00_00f0 & instruction) == 0x0000_0090 {
 		let s = if (0x0010_0000 & instruction) > 0 { "S" } else { "" };
 
+		let rd;
+		let rn;
+		let rs;
+		let rm;
 		let op;
 		match (0x01e0_0000 & instruction) >> 21 {
-			0x0 => op = "MUL",
-			0x1 => op = "MLA",
-			0x4 => op = "UMULL",
-			0x5 => op = "UMLAL",
-			0x6 => op = "SMULL",
-			0x7 => op = "SMLAL",
-			_ => op = "ERROR",
+			0x0 => {
+				op = "MUL";
+				rd = format!("R{}", (instruction & 0x000f_0000) >> 16);
+				rm = format!(", R{}", instruction & 0x0000_000f);
+				rs = format!(", R{}", (instruction & 0x0000_0f00) >> 8);
+				rn = String::from("");
+			}
+			0x1 => {
+				op = "MLA";
+				rd = format!("R{}", (instruction & 0x000f_0000) >> 16);
+				rm = format!(", R{}", instruction & 0x0000_000f);
+				rs = format!(", R{}", (instruction & 0x0000_0f00) >> 8);
+				rn = format!(", R{}", (instruction & 0x0000_f000) >> 12);
+			}
+			0x4 => {
+				op = "UMULL";
+				rd = format!("R{}", (instruction & 0x000f_0000) >> 16);
+				rm = format!(", R{}", (instruction & 0x0000_f000) >> 12);
+				rs = format!(", R{}", instruction & 0x0000_000f);
+				rn = format!(", R{}", (instruction & 0x0000_0f00) >> 8);
+			}
+			0x5 => {
+				op = "UMLAL";
+				rd = format!("R{}", (instruction & 0x000f_0000) >> 16);
+				rm = format!(", R{}", (instruction & 0x0000_f000) >> 12);
+				rs = format!(", R{}", instruction & 0x0000_000f);
+				rn = format!(", R{}", (instruction & 0x0000_0f00) >> 8);
+			}
+			0x6 => {
+				op = "SMULL";
+				rd = format!("R{}", (instruction & 0x000f_0000) >> 16);
+				rm = format!(", R{}", (instruction & 0x0000_f000) >> 12);
+				rs = format!(", R{}", instruction & 0x0000_000f);
+				rn = format!(", R{}", (instruction & 0x0000_0f00) >> 8);
+			}
+			0x7 => {
+				op = "SMLAL";
+				rd = format!("R{}", (instruction & 0x000f_0000) >> 16);
+				rm = format!(", R{}", (instruction & 0x0000_f000) >> 12);
+				rs = format!(", R{}", instruction & 0x0000_000f);
+				rn = format!(", R{}", (instruction & 0x0000_0f00) >> 8);
+			}
+			_ => {
+				op = "ERROR";
+				rd = String::from("");
+				rm = String::from("");
+				rs = String::from("");
+				rn = String::from("");
+			}
 		}
 
 		// TODO: Revisit params!!!
-		return format!(
-			"{}{} {} R{}, R{}, R{}",
-			op,
-			s,
-			disassemble_cond(cond),
-			(instruction & 0x000f_0000) >> 16,
-			instruction & 0x0000_000f,
-			(instruction & 0x0000_0f00) >> 8
-		);
+		return format!("{}{} {} {}{}{}{}", op, s, disassemble_cond(cond), rd, rm, rs, rn);
 	} else if (0x0fbf_0fff & instruction) == 0x010f_0000 {
-		return if (instruction & 0x0040_0000) > 0 {
-			format!("MRS {} R{}, CPSR", disassemble_cond(cond), (instruction & 0x0000_f000) >> 12)
-		} else {
+		return if (instruction & 0x0040_0000) != 0 {
 			format!("MRS {} R{}, SPSR", disassemble_cond(cond), (instruction & 0x0000_f000) >> 12)
+		} else {
+			format!("MRS {} R{}, CPSR", disassemble_cond(cond), (instruction & 0x0000_f000) >> 12)
 		};
 	} else if (0x0db0_f000 & instruction) == 0x0120_f000 {
 		let mut fields = String::from("");
@@ -339,7 +377,12 @@ pub fn disassemble_arm(instruction: u32) -> String {
 			let shift_type: EShiftType = FromPrimitive::from_u32((instruction & 0x0000_0060) >> 5).unwrap();
 			let shift = (0x0000_0f80 & instruction) >> 7;
 
-			address = format!("[R{}, R{}, {:?} #{}]", rn, rm, shift_type, shift);
+			let shift_type_text = if shift_type == EShiftType::ROR && shift == 0 {
+				String::from("RRX")
+			} else {
+				format!("{:?}", shift_type)
+			};
+			address = format!("[R{}, R{}, {} #{}]", rn, rm, shift_type_text, shift);
 		} else {
 			if p {
 				let pre = if w { "!" } else { "" };
@@ -459,10 +502,15 @@ pub fn disassemble_arm(instruction: u32) -> String {
 			let shift_type: EShiftType = FromPrimitive::from_u32((instruction & 0x0000_0060) >> 5).unwrap();
 			if r {
 				let rs = (0x0000_0f00 & instruction) >> 8;
-				shifter_operand = format!("R{}, {:?}, R{}", rm, shift_type, rs);
+				shifter_operand = format!("R{}, {:?} R{}", rm, shift_type, rs);
 			} else {
 				let shift = (0x0000_0f80 & instruction) >> 7;
-				shifter_operand = format!("R{}, {:?}, #{}", rm, shift_type, shift);
+				let shift_type_text = if shift_type == EShiftType::ROR && shift == 0 {
+					String::from("RRX")
+				} else {
+					format!("{:?}", shift_type)
+				};
+				shifter_operand = format!("R{}, {} #{}", rm, shift_type_text, shift);
 			}
 		}
 

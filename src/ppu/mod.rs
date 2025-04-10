@@ -598,7 +598,23 @@ impl PPU {
 					}
 				}
 				EVideoMode::Mode3 => {}
-				EVideoMode::Mode4 => {}
+				EVideoMode::Mode4 => {
+					let starting_address = if self.get_disp_cnt().get_display_frame_1() { 0xA000 } else { 0x0 };
+
+					for y in 0..160 {
+						for x in 0..240 {
+							let bitmap_index = (x as usize + (y as usize * 240));
+							let pixel_index = bitmap_index * 3;
+							let palette_entry = (self.vram[starting_address + bitmap_index]) as usize;
+
+							let color = Color::new((self.palette_ram[palette_entry * 2 + 1] as u16) << 8 | self.palette_ram[palette_entry * 2] as u16);
+
+							pixels[pixel_index] = color.get_red();
+							pixels[pixel_index + 1] = color.get_green();
+							pixels[pixel_index + 2] = color.get_blue();
+						}
+					}
+				}
 				EVideoMode::Mode5 => {}
 			}
 		}
