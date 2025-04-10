@@ -75,6 +75,18 @@ pub fn cond_passed(cpu: &CPU, cond: u8) -> bool {
 	}
 }
 
+pub fn load_32_from_memory(cpu: &mut CPU, bus: &SystemBus, address: u32) -> u32 {
+	let data;
+	if (address & 0x0000_0003) == 0 {
+		data = bus.read_32(address);
+	} else {
+		// NOTE: Forced alignment and rotation of data! (UNPREDICTABLE)
+		data = bus.read_32(address & !0x0000_0003).rotate_right((address & 0x0000_0003) * 8);
+	}
+
+	data
+}
+
 pub fn decode(cpu: &mut CPU, bus: &mut SystemBus) {
 	// NOTE: Read CPU state
 	let pc = cpu.get_current_pc();
@@ -84,6 +96,9 @@ pub fn decode(cpu: &mut CPU, bus: &mut SystemBus) {
 
 		if cpu.get_current_pc() == pc {
 			cpu.set_register_value(PROGRAM_COUNTER_REGISTER, cpu.get_current_pc() + 2);
+		} else {
+			// NOTE: Force alignment!!!
+			cpu.set_register_value(PROGRAM_COUNTER_REGISTER, cpu.get_current_pc() & !0x1);
 		}
 	} else {
 		let instruction = bus.read_32(pc);
@@ -91,6 +106,9 @@ pub fn decode(cpu: &mut CPU, bus: &mut SystemBus) {
 
 		if cpu.get_current_pc() == pc {
 			cpu.set_register_value(PROGRAM_COUNTER_REGISTER, cpu.get_current_pc() + 4);
+		} else {
+			// NOTE: Force alignment!!!
+			cpu.set_register_value(PROGRAM_COUNTER_REGISTER, cpu.get_current_pc() & !0x1);
 		}
 	}
 }

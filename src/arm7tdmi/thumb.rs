@@ -2,7 +2,7 @@ use bitvec::prelude::*;
 use num_traits::PrimInt;
 
 use crate::arm7tdmi::cpu::{CPU, LINK_REGISTER_REGISTER, PROGRAM_COUNTER_REGISTER, STACK_POINTER_REGISTER};
-use crate::arm7tdmi::{cond_passed, sign_extend, EExceptionType, EShiftType};
+use crate::arm7tdmi::{cond_passed, load_32_from_memory, sign_extend, EExceptionType, EShiftType};
 use crate::system::{MemoryInterface, SystemBus};
 
 pub fn operate_thumb(instruction: u16, cpu: &mut CPU, bus: &mut SystemBus) {
@@ -216,7 +216,7 @@ pub fn operate_thumb(instruction: u16, cpu: &mut CPU, bus: &mut SystemBus) {
 					shifter_carry_out = rd.view_bits::<Lsb0>()[(rs - 1) as usize];
 				} else if rs == 32 {
 					alu_out = 0;
-					shifter_carry_out = (rd & 0x0000_0001) != 0;
+					shifter_carry_out = (rd & 0x8000_0000) != 0;
 				} else {
 					alu_out = 0;
 					shifter_carry_out = false;
@@ -446,12 +446,7 @@ pub fn operate_thumb(instruction: u16, cpu: &mut CPU, bus: &mut SystemBus) {
 			if b {
 				data = bus.read_8(address) as u32;
 			} else {
-				if (address & 0x0000_0003) == 0 {
-					data = bus.read_32(address);
-				} else {
-					// NOTE: Forced alignment and rotation of data! (UNPREDICTABLE)
-					data = bus.read_32(address & !0x0000_0003).rotate_right((address & 0x0000_0003) * 8);
-				}
+				data = load_32_from_memory(cpu, bus, address);
 			}
 			cpu.set_register_value(rd_index, data);
 		} else {
@@ -523,12 +518,7 @@ pub fn operate_thumb(instruction: u16, cpu: &mut CPU, bus: &mut SystemBus) {
 			if b {
 				data = bus.read_8(address) as u32;
 			} else {
-				if (address & 0x0000_0003) == 0 {
-					data = bus.read_32(address);
-				} else {
-					// NOTE: Forced alignment and rotation of data! (UNPREDICTABLE)
-					data = bus.read_32(address & !0x0000_0003).rotate_right((address & 0x0000_0003) * 8);
-				}
+				data = load_32_from_memory(cpu, bus, address);
 			}
 
 			cpu.set_register_value(rd_index, data);
@@ -574,13 +564,7 @@ pub fn operate_thumb(instruction: u16, cpu: &mut CPU, bus: &mut SystemBus) {
 
 		let address = cpu.get_register_value(STACK_POINTER_REGISTER).wrapping_add(offset * 4);
 		if l {
-			let data;
-			if (address & 0x0000_0003) == 0 {
-				data = bus.read_32(address);
-			} else {
-				// NOTE: Forced alignment and rotation of data! (UNPREDICTABLE)
-				data = bus.read_32(address & !0x0000_0003).rotate_right((address & 0x0000_0003) * 8);
-			}
+			let data = load_32_from_memory(cpu, bus, address);
 
 			cpu.set_register_value(rd_index, data);
 		} else {
@@ -617,7 +601,7 @@ pub fn operate_thumb(instruction: u16, cpu: &mut CPU, bus: &mut SystemBus) {
 		// PUSH/POP
 		let pop = (0x0800 & instruction) != 0;
 		let r = (0x0100 & instruction) != 0;
-		let sp = cpu.get_register_value(STACK_POINTER_REGISTER) & !0x3;
+		let sp = cpu.get_register_value(STACK_POINTER_REGISTER);
 		let regs_value = 0x00ff & instruction;
 		let reg_list = regs_value.view_bits::<Lsb0>();
 
@@ -629,13 +613,13 @@ pub fn operate_thumb(instruction: u16, cpu: &mut CPU, bus: &mut SystemBus) {
 
 			for i in 0..8 {
 				if reg_list[i] {
-					cpu.set_register_value(i as u8, bus.read_32(address));
+					cpu.set_register_value(i as u8, bus.read_32(address & !0x3));
 					address = address.wrapping_add(4);
 				}
 			}
 
 			if r {
-				let value = bus.read_32(address) & !0x1;
+				let value = bus.read_32(address & !0x3) & !0x1;
 				cpu.set_register_value(PROGRAM_COUNTER_REGISTER, value);
 				address = address.wrapping_add(4);
 			}
@@ -649,13 +633,13 @@ pub fn operate_thumb(instruction: u16, cpu: &mut CPU, bus: &mut SystemBus) {
 			let mut address = start_address;
 			for i in 0..8 {
 				if reg_list[i] {
-					bus.write_32(address, cpu.get_register_value(i as u8));
+					bus.write_32(address & !0x3, cpu.get_register_value(i as u8));
 					address = address.wrapping_add(4);
 				}
 			}
 
 			if r {
-				bus.write_32(address, cpu.get_register_value(LINK_REGISTER_REGISTER));
+				bus.write_32(address & !0x3, cpu.get_register_value(LINK_REGISTER_REGISTER));
 				address = address.wrapping_add(4);
 			}
 			debug_assert_eq!(end_address, address.wrapping_sub(4));
@@ -674,39 +658,54 @@ pub fn operate_thumb(instruction: u16, cpu: &mut CPU, bus: &mut SystemBus) {
 		let rn = cpu.get_register_value(rn_index);
 		let reg_list = &instruction.view_bits::<Lsb0>()[0..8];
 
-		// Addressing Mode
-		let start_address = rn;
-		let end_address = rn.wrapping_add(4 * (reg_list.count_ones() as u32)) - 4;
-		let mut address = start_address;
+		// NOTE: UNPREDICTABLE!!!
+		if reg_list.not_any() {
+			// Addressing Mode
+			let address = rn & !0x3;
+			cpu.set_register_value(rn_index, rn.wrapping_add(0x40));
 
-		let store_rn = reg_list[rn_index as usize];
-		if !(l && store_rn) {
-			cpu.set_register_value(rn_index, rn.wrapping_add(4 * (reg_list.count_ones() as u32)))
-		}
-
-		if l {
-			for i in 0..8 {
-				if reg_list[i] {
-					cpu.set_register_value(i as u8, bus.read_32(address));
-					address = address.wrapping_add(4);
-				}
+			if l {
+				let value = load_32_from_memory(cpu, bus, address);
+				cpu.set_register_value(PROGRAM_COUNTER_REGISTER, value);
+			} else {
+				let value = cpu.get_register_value(PROGRAM_COUNTER_REGISTER) + 2;
+				bus.write_32(address, value);
 			}
-			debug_assert_eq!(end_address, address.wrapping_sub(4));
 		} else {
-			let mut first = true;
-			for i in 0..8 {
-				if reg_list[i] {
-					// NOTE: UNPREDICTABLE BEHAVIOR
-					let value = if first && i == rn_index as usize { rn } else { cpu.get_register_value(i as u8) };
+			// Addressing Mode
+			let start_address = rn;
+			let end_address = rn.wrapping_add(4 * (reg_list.count_ones() as u32)) - 4;
+			let mut address = start_address;
 
-					bus.write_32(address, value);
-					address = address.wrapping_add(4);
-
-					first = false;
-				}
+			let store_rn = reg_list[rn_index as usize];
+			if !(l && store_rn) {
+				cpu.set_register_value(rn_index, rn.wrapping_add(4 * (reg_list.count_ones() as u32)));
 			}
 
-			debug_assert_eq!(end_address, address.wrapping_sub(4));
+			if l {
+				for i in 0..8 {
+					if reg_list[i] {
+						cpu.set_register_value(i as u8, bus.read_32(address));
+						address = address.wrapping_add(4);
+					}
+				}
+				debug_assert_eq!(end_address, address.wrapping_sub(4));
+			} else {
+				let mut first = true;
+				for i in 0..8 {
+					if reg_list[i] {
+						// NOTE: UNPREDICTABLE BEHAVIOR
+						let value = if first && i == rn_index as usize { rn } else { cpu.get_register_value(i as u8) };
+
+						bus.write_32(address, value);
+						address = address.wrapping_add(4);
+
+						first = false;
+					}
+				}
+
+				debug_assert_eq!(end_address, address.wrapping_sub(4));
+			}
 		}
 	} else if (0xff00 & instruction) == 0xdf00 {
 		// SWI Software Interrupt Exception

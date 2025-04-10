@@ -4,7 +4,7 @@ use bitvec::prelude::*;
 use num_traits::{FromPrimitive, PrimInt};
 
 use crate::arm7tdmi::cpu::{CPU, LINK_REGISTER_REGISTER, PROGRAM_COUNTER_REGISTER};
-use crate::arm7tdmi::{cond_passed, sign_extend, EExceptionType, EOperatingMode, EShiftType};
+use crate::arm7tdmi::{cond_passed, load_32_from_memory, sign_extend, EExceptionType, EOperatingMode, EShiftType};
 use crate::system::{MemoryInterface, SystemBus};
 
 pub fn operate_arm(cpu: &mut CPU, bus: &mut SystemBus, instruction: u32) {
@@ -1090,16 +1090,4 @@ pub fn operate_arm(cpu: &mut CPU, bus: &mut SystemBus, instruction: u32) {
 			}
 		}
 	}
-}
-
-fn load_32_from_memory(cpu: &mut CPU, bus: &SystemBus, address: u32) -> u32 {
-	let data;
-	if (address & 0x0000_0003) == 0 {
-		data = bus.read_32(address);
-	} else {
-		// NOTE: Forced alignment and rotation of data! (UNPREDICTABLE)
-		data = bus.read_32(address & !0x0000_0003).rotate_right((address & 0x0000_0003) * 8);
-	}
-
-	data
 }

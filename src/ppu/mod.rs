@@ -4,7 +4,7 @@ use bitvec::prelude::*;
 use num_derive::*;
 use num_traits::FromPrimitive;
 
-use crate::arm7tdmi::{sign_extend, Gba16BitRegister, Gba8BitSlice};
+use crate::arm7tdmi::{sign_extend, Gba16BitRegister, Gba32BitRegister, Gba8BitSlice};
 use crate::system::MemoryInterface;
 use crate::system::{OAM_ADDR, PALETTE_RAM_ADDR, VRAM_ADDR};
 
@@ -226,44 +226,44 @@ impl<'a> SpriteEntry<'a> {
 pub struct PPU {
 	// Registers
 	registers: Box<[u8]>,
-	//	disp_cnt: Gba16BitRegister,
-	//	// green_swap: Gba16BitRegister, // Undocumented - Green Swap
-	//	disp_stat: &'a Gba8BitSlice,
-	//	vcount: &'a Gba8BitSlice,
-	//	bg0_cnt: &'a Gba8BitSlice,
-	//	bg1_cnt: &'a Gba8BitSlice,
-	//	bg2_cnt: &'a Gba8BitSlice,
-	//	bg3_cnt: &'a Gba8BitSlice,
-	//	bg0_hofs: &'a Gba8BitSlice,
-	//	bg0_vofs: &'a Gba8BitSlice,
-	//	bg1_hofs: &'a Gba8BitSlice,
-	//	bg1_vofs: &'a Gba8BitSlice,
-	//	bg2_hofs: &'a Gba8BitSlice,
-	//	bg2_vofs: &'a Gba8BitSlice,
-	//	bg3_hofs: &'a Gba8BitSlice,
-	//	bg3_vofs: &'a Gba8BitSlice,
-	//	bg2_pa: &'a Gba8BitSlice,
-	//	bg2_pb: &'a Gba8BitSlice,
-	//	bg2_pc: &'a Gba8BitSlice,
-	//	bg2_pd: &'a Gba8BitSlice,
-	//	bg2_x: &'a Gba8BitSlice,
-	//	bg2_y: &'a Gba8BitSlice,
-	//	bg3_pa: &'a Gba8BitSlice,
-	//	bg3_pb: &'a Gba8BitSlice,
-	//	bg3_pc: &'a Gba8BitSlice,
-	//	bg3_pd: &'a Gba8BitSlice,
-	//	bg3_x: &'a Gba8BitSlice,
-	//	bg3_y: &'a Gba8BitSlice,
-	//	win0_h: &'a Gba8BitSlice,
-	//	win1_h: &'a Gba8BitSlice,
-	//	win0_v: &'a Gba8BitSlice,
-	//	win1_v: &'a Gba8BitSlice,
-	//	win_in: &'a Gba8BitSlice,
-	//	win_out: &'a Gba8BitSlice,
-	//	mosaic: &'a Gba8BitSlice,
-	//	bld_cnt: &'a Gba8BitSlice,
-	//	bld_alpha: &'a Gba8BitSlice,
-	//	bld_y: &'a Gba8BitSlice,
+	disp_cnt: DisplayControl,
+	// green_swap: Gba16BitRegister, // Undocumented - Green Swap
+	disp_stat: DisplayStatus,
+	vcount: u8,
+	bg0_cnt: BackgroundControl,
+	bg1_cnt: Gba16BitRegister,
+	bg2_cnt: Gba16BitRegister,
+	bg3_cnt: Gba16BitRegister,
+	bg0_hofs: Gba16BitRegister,
+	bg0_vofs: Gba16BitRegister,
+	bg1_hofs: Gba16BitRegister,
+	bg1_vofs: Gba16BitRegister,
+	bg2_hofs: Gba16BitRegister,
+	bg2_vofs: Gba16BitRegister,
+	bg3_hofs: Gba16BitRegister,
+	bg3_vofs: Gba16BitRegister,
+	bg2_pa: Gba16BitRegister,
+	bg2_pb: Gba16BitRegister,
+	bg2_pc: Gba16BitRegister,
+	bg2_pd: Gba16BitRegister,
+	bg2_x: Gba32BitRegister,
+	bg2_y: Gba32BitRegister,
+	bg3_pa: Gba16BitRegister,
+	bg3_pb: Gba16BitRegister,
+	bg3_pc: Gba16BitRegister,
+	bg3_pd: Gba16BitRegister,
+	bg3_x: Gba32BitRegister,
+	bg3_y: Gba32BitRegister,
+	win0_h: Gba16BitRegister,
+	win1_h: Gba16BitRegister,
+	win0_v: Gba16BitRegister,
+	win1_v: Gba16BitRegister,
+	win_in: Gba16BitRegister,
+	win_out: Gba16BitRegister,
+	mosaic: Gba16BitRegister,
+	bld_cnt: Gba16BitRegister,
+	bld_alpha: Gba16BitRegister,
+	bld_y: Gba16BitRegister,
 
 	// Memory
 	palette_ram: Box<[u8]>,
@@ -275,79 +275,79 @@ impl PPU {
 	pub fn new() -> Self {
 		Self {
 			registers: vec![0; 0x56].into_boxed_slice(),
-			//			disp_cnt: &registers[DISPCNT_RANGE].view_bits(),
-			//			disp_stat: &registers[0x4..0x6].view_bits(),
-			//			vcount: &registers[0x6..0x8].view_bits(),
-			//			bg0_cnt: &registers[0x8..0xa].view_bits(),
-			//			bg1_cnt: &registers[0xa..0xc].view_bits(),
-			//			bg2_cnt: &registers[0xc..0xe].view_bits(),
-			//			bg3_cnt: &registers[0xe..0x10].view_bits(),
-			//			bg0_hofs: &registers[0x10..0x12].view_bits(),
-			//			bg0_vofs: &registers[0x12..0x14].view_bits(),
-			//			bg1_hofs: &registers[0x14..0x16].view_bits(),
-			//			bg1_vofs: &registers[0x16..0x18].view_bits(),
-			//			bg2_hofs: &registers[0x18..0x1a].view_bits(),
-			//			bg2_vofs: &registers[0x1a..0x1c].view_bits(),
-			//			bg3_hofs: &registers[0x1c..0x1e].view_bits(),
-			//			bg3_vofs: &registers[0x1e..0x20].view_bits(),
-			//			bg2_pa: &registers[0x20..0x22].view_bits(),
-			//			bg2_pb: &registers[0x22..0x24].view_bits(),
-			//			bg2_pc: &registers[0x24..0x26].view_bits(),
-			//			bg2_pd: &registers[0x26..0x28].view_bits(),
-			//			bg2_x: &registers[0x28..0x2c].view_bits(),
-			//			bg2_y: &registers[0x2c..0x30].view_bits(),
-			//			bg3_pa: &registers[0x30..0x32].view_bits(),
-			//			bg3_pb: &registers[0x32..0x34].view_bits(),
-			//			bg3_pc: &registers[0x34..0x36].view_bits(),
-			//			bg3_pd: &registers[0x36..0x38].view_bits(),
-			//			bg3_x: &registers[0x38..0x3c].view_bits(),
-			//			bg3_y: &registers[0x3c..0x40].view_bits(),
-			//			win0_h: &registers[0x40..0x42].view_bits(),
-			//			win1_h: &registers[0x42..0x44].view_bits(),
-			//			win0_v: &registers[0x44..0x46].view_bits(),
-			//			win1_v: &registers[0x46..0x48].view_bits(),
-			//			win_in: &registers[0x48..0x4a].view_bits(),
-			//			win_out: &registers[0x4a..0x4c].view_bits(),
-			//			mosaic: &registers[0x4c..0x50].view_bits(),
-			//			bld_cnt: &registers[0x50..0x52].view_bits(),
-			//			bld_alpha: &registers[0x52..0x54].view_bits(),
-			//			bld_y: &registers[0x54..0x56].view_bits(),
+			disp_cnt: DisplayControl::new(),
+			disp_stat: DisplayStatus::new(),
+			vcount: 0,
+			bg0_cnt: &registers[0x8..0xa].view_bits(),
+			bg1_cnt: &registers[0xa..0xc].view_bits(),
+			bg2_cnt: &registers[0xc..0xe].view_bits(),
+			bg3_cnt: &registers[0xe..0x10].view_bits(),
+			bg0_hofs: &registers[0x10..0x12].view_bits(),
+			bg0_vofs: &registers[0x12..0x14].view_bits(),
+			bg1_hofs: &registers[0x14..0x16].view_bits(),
+			bg1_vofs: &registers[0x16..0x18].view_bits(),
+			bg2_hofs: &registers[0x18..0x1a].view_bits(),
+			bg2_vofs: &registers[0x1a..0x1c].view_bits(),
+			bg3_hofs: &registers[0x1c..0x1e].view_bits(),
+			bg3_vofs: &registers[0x1e..0x20].view_bits(),
+			bg2_pa: &registers[0x20..0x22].view_bits(),
+			bg2_pb: &registers[0x22..0x24].view_bits(),
+			bg2_pc: &registers[0x24..0x26].view_bits(),
+			bg2_pd: &registers[0x26..0x28].view_bits(),
+			bg2_x: &registers[0x28..0x2c].view_bits(),
+			bg2_y: &registers[0x2c..0x30].view_bits(),
+			bg3_pa: &registers[0x30..0x32].view_bits(),
+			bg3_pb: &registers[0x32..0x34].view_bits(),
+			bg3_pc: &registers[0x34..0x36].view_bits(),
+			bg3_pd: &registers[0x36..0x38].view_bits(),
+			bg3_x: &registers[0x38..0x3c].view_bits(),
+			bg3_y: &registers[0x3c..0x40].view_bits(),
+			win0_h: &registers[0x40..0x42].view_bits(),
+			win1_h: &registers[0x42..0x44].view_bits(),
+			win0_v: &registers[0x44..0x46].view_bits(),
+			win1_v: &registers[0x46..0x48].view_bits(),
+			win_in: &registers[0x48..0x4a].view_bits(),
+			win_out: &registers[0x4a..0x4c].view_bits(),
+			mosaic: &registers[0x4c..0x50].view_bits(),
+			bld_cnt: &registers[0x50..0x52].view_bits(),
+			bld_alpha: &registers[0x52..0x54].view_bits(),
+			bld_y: &registers[0x54..0x56].view_bits(),
 			palette_ram: vec![0; PALETTE_RAM_SIZE].into_boxed_slice(),
 			vram: vec![0; VRAM_SIZE].into_boxed_slice(),
 			oam: vec![0; OAM_SIZE].into_boxed_slice(),
 		}
 	}
 
-	pub fn get_disp_cnt(&mut self) -> DispCnt {
-		DispCnt::new(self.registers[DISP_CNT_RANGE].view_bits_mut())
+	pub fn get_disp_cnt(&mut self) -> &DisplayControl {
+		&self.disp_cnt
 	}
 
-	pub fn get_disp_stat(&mut self) -> DispStat {
-		DispStat::new(self.registers[DISP_STAT_RANGE].view_bits_mut())
+	pub fn get_disp_stat(&mut self) -> &DisplayStatus {
+		&self.disp_stat
 	}
 
 	pub fn get_vcount(&self) -> u8 {
-		self.registers[VCOUNT_RANGE].view_bits::<Lsb0>()[0..8].load_le()
+		self.vcount
 	}
 
 	pub fn set_vcount(&mut self, value: u8) {
-		self.registers[VCOUNT_RANGE].view_bits_mut::<Lsb0>()[0..8].store_le(value);
+		self.vcount = value
 	}
 
-	fn get_bg0_cnt(&self) -> BgCnt {
-		BgCnt::new(self.registers[BG0_CNT_RANGE].view_bits())
+	fn get_bg0_cnt(&self) -> BackgroundControl {
+		BackgroundControl::new(self.registers[BG0_CNT_RANGE].view_bits())
 	}
 
-	fn get_bg1_cnt(&self) -> BgCnt {
-		BgCnt::new(self.registers[BG1_CNT_RANGE].view_bits())
+	fn get_bg1_cnt(&self) -> BackgroundControl {
+		BackgroundControl::new(self.registers[BG1_CNT_RANGE].view_bits())
 	}
 
-	fn get_bg2_cnt(&self) -> BgCnt {
-		BgCnt::new(self.registers[BG2_CNT_RANGE].view_bits())
+	fn get_bg2_cnt(&self) -> BackgroundControl {
+		BackgroundControl::new(self.registers[BG2_CNT_RANGE].view_bits())
 	}
 
-	fn get_bg3_cnt(&self) -> BgCnt {
-		BgCnt::new(self.registers[BG3_CNT_RANGE].view_bits())
+	fn get_bg3_cnt(&self) -> BackgroundControl {
+		BackgroundControl::new(self.registers[BG3_CNT_RANGE].view_bits())
 	}
 
 	// FIXME: Check if 8 or 9!!!
@@ -383,52 +383,52 @@ impl PPU {
 		self.registers[BG3_VOFS_RANGE].view_bits::<Lsb0>()[0..=9].load_le()
 	}
 
-	fn get_bg2_pa(&self) -> BgPixelIncrement {
-		BgPixelIncrement::new(self.registers[BG2_PA_RANGE].view_bits())
+	fn get_bg2_pa(&self) -> AffineMatrixFixed {
+		AffineMatrixFixed::new(self.registers[BG2_PA_RANGE].view_bits())
 	}
 
-	fn get_bg2_pb(&self) -> BgPixelIncrement {
-		BgPixelIncrement::new(self.registers[BG2_PB_RANGE].view_bits())
+	fn get_bg2_pb(&self) -> AffineMatrixFixed {
+		AffineMatrixFixed::new(self.registers[BG2_PB_RANGE].view_bits())
 	}
 
-	fn get_bg2_pc(&self) -> BgPixelIncrement {
-		BgPixelIncrement::new(self.registers[BG2_PC_RANGE].view_bits())
+	fn get_bg2_pc(&self) -> AffineMatrixFixed {
+		AffineMatrixFixed::new(self.registers[BG2_PC_RANGE].view_bits())
 	}
 
-	fn get_bg2_pd(&self) -> BgPixelIncrement {
-		BgPixelIncrement::new(self.registers[BG2_PD_RANGE].view_bits())
+	fn get_bg2_pd(&self) -> AffineMatrixFixed {
+		AffineMatrixFixed::new(self.registers[BG2_PD_RANGE].view_bits())
 	}
 
-	fn get_bg2_x(&self) -> AffineBgPositionFloat {
-		AffineBgPositionFloat::new(self.registers[BG2_X_RANGE].view_bits())
+	fn get_bg2_x(&self) -> AffineBgPositionFixed {
+		AffineBgPositionFixed::new(self.registers[BG2_X_RANGE].view_bits())
 	}
 
-	fn get_bg2_y(&self) -> AffineBgPositionFloat {
-		AffineBgPositionFloat::new(self.registers[BG2_Y_RANGE].view_bits())
+	fn get_bg2_y(&self) -> AffineBgPositionFixed {
+		AffineBgPositionFixed::new(self.registers[BG2_Y_RANGE].view_bits())
 	}
 
-	fn get_bg3_pa(&self) -> BgPixelIncrement {
-		BgPixelIncrement::new(self.registers[BG3_PA_RANGE].view_bits())
+	fn get_bg3_pa(&self) -> AffineMatrixFixed {
+		AffineMatrixFixed::new(self.registers[BG3_PA_RANGE].view_bits())
 	}
 
-	fn get_bg3_pb(&self) -> BgPixelIncrement {
-		BgPixelIncrement::new(self.registers[BG3_PB_RANGE].view_bits())
+	fn get_bg3_pb(&self) -> AffineMatrixFixed {
+		AffineMatrixFixed::new(self.registers[BG3_PB_RANGE].view_bits())
 	}
 
-	fn get_bg3_pc(&self) -> BgPixelIncrement {
-		BgPixelIncrement::new(self.registers[BG3_PC_RANGE].view_bits())
+	fn get_bg3_pc(&self) -> AffineMatrixFixed {
+		AffineMatrixFixed::new(self.registers[BG3_PC_RANGE].view_bits())
 	}
 
-	fn get_bg3_pd(&self) -> BgPixelIncrement {
-		BgPixelIncrement::new(self.registers[BG3_PD_RANGE].view_bits())
+	fn get_bg3_pd(&self) -> AffineMatrixFixed {
+		AffineMatrixFixed::new(self.registers[BG3_PD_RANGE].view_bits())
 	}
 
-	fn get_bg3_x(&self) -> AffineBgPositionFloat {
-		AffineBgPositionFloat::new(self.registers[BG3_X_RANGE].view_bits())
+	fn get_bg3_x(&self) -> AffineBgPositionFixed {
+		AffineBgPositionFixed::new(self.registers[BG3_X_RANGE].view_bits())
 	}
 
-	fn get_bg3_y(&self) -> AffineBgPositionFloat {
-		AffineBgPositionFloat::new(self.registers[BG3_Y_RANGE].view_bits())
+	fn get_bg3_y(&self) -> AffineBgPositionFixed {
+		AffineBgPositionFixed::new(self.registers[BG3_Y_RANGE].view_bits())
 	}
 
 	fn get_win0_dimensions(&self) -> WindowDimensions {
@@ -470,149 +470,151 @@ impl PPU {
 	pub fn render(&mut self) -> Vec<f32> {
 		let mut pixels = vec![1.0; SCREEN_TOTAL_PIXELS * 3];
 		if !self.get_disp_cnt().get_forced_blank() {
-			let video_mode = self.get_disp_cnt().get_bg_mode();
+			if let Some(video_mode) = self.get_disp_cnt().get_bg_mode() {
+				match video_mode {
+					EVideoMode::Mode0 => {}
+					EVideoMode::Mode1 => {}
+					EVideoMode::Mode2 => {
+						let bg3_cnt = self.get_bg3_cnt();
+						let bg3_wraparound = bg3_cnt.get_overflow_wraparound();
+						let bg3_tiles = match bg3_cnt.get_size() {
+							0x0 => 16,
+							0x1 => 32,
+							0x2 => 64,
+							0x3 => 128,
+							_ => {
+								panic!("IMPOSSIBLE!")
+							}
+						};
 
-			match video_mode {
-				EVideoMode::Mode0 => {}
-				EVideoMode::Mode1 => {}
-				EVideoMode::Mode2 => {
-					let bg3_cnt = self.get_bg3_cnt();
-					let bg3_wraparound = bg3_cnt.get_overflow_wraparound();
-					let bg3_tiles = match bg3_cnt.get_size() {
-						0x0 => 16,
-						0x1 => 32,
-						0x2 => 64,
-						0x3 => 128,
-						_ => {
-							panic!("IMPOSSIBLE!")
-						}
-					};
+						let bg3_x = self.get_bg3_x().get_value();
+						let bg3_y = self.get_bg3_y().get_value();
 
-					let bg3_x = self.get_bg3_x().get_value();
-					let bg3_y = self.get_bg3_y().get_value();
+						// Backgrounds
+						//					for x in 0..240 {
+						//						for y in 0..160 {
+						//							// TODO: Use transform!!!
+						//							let pixel_offset = (bg3_x as usize + x) + (bg3_y as usize + y * bg3_tiles);
+						//							let tile = pixel_offset / 8;
+						//							let tile_number = self.vram[bg3_cnt.get_map_data_address() + tile] as usize;
+						//
+						//							let palette_color_index = (self.vram[bg3_cnt.get_tile_data_address() + (tile_number * 64) + (pixel_offset % 8)] * 2) as usize;
+						//							let color = Color::new((self.palette_ram[palette_color_index + 1] as u16) << 8 | self.palette_ram[palette_color_index] as u16);
+						//
+						//							let pixel_index = (y * 240 + x) * 3;
+						//							pixels[pixel_index] = color.get_red();
+						//							pixels[pixel_index + 1] = color.get_green();
+						//							pixels[pixel_index + 2] = color.get_blue();
+						//						}
+						//					}
 
-					// Backgrounds
-					//					for x in 0..240 {
-					//						for y in 0..160 {
-					//							// TODO: Use transform!!!
-					//							let pixel_offset = (bg3_x as usize + x) + (bg3_y as usize + y * bg3_tiles);
-					//							let tile = pixel_offset / 8;
-					//							let tile_number = self.vram[bg3_cnt.get_map_data_address() + tile] as usize;
-					//
-					//							let palette_color_index = (self.vram[bg3_cnt.get_tile_data_address() + (tile_number * 64) + (pixel_offset % 8)] * 2) as usize;
-					//							let color = Color::new((self.palette_ram[palette_color_index + 1] as u16) << 8 | self.palette_ram[palette_color_index] as u16);
-					//
-					//							let pixel_index = (y * 240 + x) * 3;
-					//							pixels[pixel_index] = color.get_red();
-					//							pixels[pixel_index + 1] = color.get_green();
-					//							pixels[pixel_index + 2] = color.get_blue();
-					//						}
-					//					}
+						if self.get_disp_cnt().get_screen_display_sprites() {
+							let is_1d_mapping = self.get_disp_cnt().get_sprite_1d_mapping();
+							// Reverse sprites for priority order (Sprite 0 = Front, Last Sprite = back)
+							let sprites = self.oam.chunks_exact(8).map(|x| SpriteEntry::new(x.view_bits())).rev();
+							for sprite in sprites.filter(|s| s.get_is_affine() || !s.get_is_virtual_double_sized()) {
+								let (width, height) = sprite.get_size();
+								let tiles_per_row = if sprite.get_is_256_palette() { 16 } else { 32 };
+								let tile_length = if sprite.get_is_256_palette() { 64 } else { 32 };
+								let start_tile_address = SPRITE_TILES_START_ADDRESS + sprite.get_tile_index() as usize * 32;
 
-					if self.get_disp_cnt().get_screen_display_obj() {
-						let is_1d_mapping = self.get_disp_cnt().get_sprite_1d_mapping();
-						// Reverse sprites for priority order (Sprite 0 = Front, Last Sprite = back)
-						let sprites = self.oam.chunks_exact(8).map(|x| SpriteEntry::new(x.view_bits())).rev();
-						for sprite in sprites.filter(|s| s.get_is_affine() || !s.get_is_virtual_double_sized()) {
-							let (width, height) = sprite.get_size();
-							let tiles_per_row = if sprite.get_is_256_palette() { 16 } else { 32 };
-							let tile_length = if sprite.get_is_256_palette() { 64 } else { 32 };
-							let start_tile_address = SPRITE_TILES_START_ADDRESS + sprite.get_tile_index() as usize * 32;
+								let pixel_x0 = (width / 2) as i32;
+								let pixel_y0 = (height / 2) as i32;
 
-							let pixel_x0 = (width / 2) as i32;
-							let pixel_y0 = (height / 2) as i32;
+								let half_width = if sprite.get_is_virtual_double_sized() { width as i32 } else { pixel_x0 };
+								let half_height = if sprite.get_is_virtual_double_sized() { height as i32 } else { pixel_y0 };
 
-							let half_width = if sprite.get_is_virtual_double_sized() { width as i32 } else { pixel_x0 };
-							let half_height = if sprite.get_is_virtual_double_sized() { height as i32 } else { pixel_y0 };
+								for y in -half_height..half_height {
+									for x in -half_width..half_width {
+										let pixel_x;
+										let pixel_y;
+										if sprite.get_is_affine() {
+											let affine_matrix_starting_address = sprite.get_affine_matrix_index() * 32;
+											let pa =
+												AffineMatrixFixed::new(self.oam[affine_matrix_starting_address + 0x6..=affine_matrix_starting_address + 0x7].view_bits::<Lsb0>())
+													.get_value();
+											let pb =
+												AffineMatrixFixed::new(self.oam[affine_matrix_starting_address + 0xe..=affine_matrix_starting_address + 0xf].view_bits::<Lsb0>())
+													.get_value();
+											let pc =
+												AffineMatrixFixed::new(self.oam[affine_matrix_starting_address + 0x16..=affine_matrix_starting_address + 0x17].view_bits::<Lsb0>())
+													.get_value();
+											let pd =
+												AffineMatrixFixed::new(self.oam[affine_matrix_starting_address + 0x1e..=affine_matrix_starting_address + 0x1f].view_bits::<Lsb0>())
+													.get_value();
 
-							for y in -half_height..half_height {
-								for x in -half_width..half_width {
-									let pixel_x;
-									let pixel_y;
-									if sprite.get_is_affine() {
-										let affine_matrix_starting_address = sprite.get_affine_matrix_index() * 32;
-										let pa = AffineMatrixFloat::new(self.oam[affine_matrix_starting_address + 0x6..=affine_matrix_starting_address + 0x7].view_bits::<Lsb0>())
-											.get_value();
-										let pb = AffineMatrixFloat::new(self.oam[affine_matrix_starting_address + 0xe..=affine_matrix_starting_address + 0xf].view_bits::<Lsb0>())
-											.get_value();
-										let pc =
-											AffineMatrixFloat::new(self.oam[affine_matrix_starting_address + 0x16..=affine_matrix_starting_address + 0x17].view_bits::<Lsb0>())
-												.get_value();
-										let pd =
-											AffineMatrixFloat::new(self.oam[affine_matrix_starting_address + 0x1e..=affine_matrix_starting_address + 0x1f].view_bits::<Lsb0>())
-												.get_value();
-
-										pixel_x = pixel_x0 + ((pa * x + pb * y) >> 8);
-										pixel_y = pixel_y0 + ((pc * x + pd * y) >> 8);
-									} else {
-										pixel_x = pixel_x0 + x;
-										pixel_y = pixel_y0 + y;
-									}
-
-									// NOTE: These values wrap around
-									let screen_x = sprite.get_x_coord() + half_width + x;
-									let screen_y = sprite.get_y_coord() + half_height + y;
-
-									// Y has range -127/127 (within 160 vertical screen size)
-									if screen_x >= 0
-										&& screen_y >= 0 && screen_x < 240 && screen_y < 160
-										&& pixel_x >= 0 && pixel_x < width as i32
-										&& pixel_y >= 0 && pixel_y < height as i32
-									{
-										let pixel_index = (screen_x as usize + (screen_y as usize * 240)) * 3;
-
-										let tx = pixel_x as usize / 8;
-										let ty = pixel_y as usize / 8;
-										let tile_address = if is_1d_mapping {
-											let tile = tx + ty * width / 8;
-											start_tile_address + tile * tile_length
+											pixel_x = pixel_x0 + ((pa * x + pb * y) >> 8);
+											pixel_y = pixel_y0 + ((pc * x + pd * y) >> 8);
 										} else {
-											let tile = tx + ty * tiles_per_row;
-											start_tile_address + tile * tile_length
-										};
+											pixel_x = pixel_x0 + x;
+											pixel_y = pixel_y0 + y;
+										}
 
-										let tile_pixel = ((pixel_x % 8) + (pixel_y % 8) * 8) as usize;
-										let palette_entry = (self.vram[tile_address + tile_pixel]) as u32;
+										// NOTE: These values wrap around
+										let screen_x = sprite.get_x_coord() + half_width + x;
+										let screen_y = sprite.get_y_coord() + half_height + y;
 
-										if palette_entry != 0 {
-											let color;
-											if sprite.get_is_256_palette() {
-												color = Color::new(self.read_16(PALETTE_RAM_ADDR as u32 + SPRITE_PALETTE_START_ADDRESS + palette_entry * 2));
+										// Y has range -127/127 (within 160 vertical screen size)
+										if screen_x >= 0
+											&& screen_y >= 0 && screen_x < 240 && screen_y < 160
+											&& pixel_x >= 0 && pixel_x < width as i32 && pixel_y >= 0
+											&& pixel_y < height as i32
+										{
+											let pixel_index = (screen_x as usize + (screen_y as usize * 240)) * 3;
+
+											let tx = pixel_x as usize / 8;
+											let ty = pixel_y as usize / 8;
+											let tile_address = if is_1d_mapping {
+												let tile = tx + ty * width / 8;
+												start_tile_address + tile * tile_length
 											} else {
-												let palette_offset = sprite.get_palette_number() as u32 * 16;
-												let color_address = PALETTE_RAM_ADDR as u32 + SPRITE_PALETTE_START_ADDRESS + (palette_offset + palette_entry) * 2;
-												color = Color::new(self.read_16(color_address));
-											}
+												let tile = tx + ty * tiles_per_row;
+												start_tile_address + tile * tile_length
+											};
 
-											pixels[pixel_index] = color.get_red();
-											pixels[pixel_index + 1] = color.get_green();
-											pixels[pixel_index + 2] = color.get_blue();
+											let tile_pixel = ((pixel_x % 8) + (pixel_y % 8) * 8) as usize;
+											let palette_entry = (self.vram[tile_address + tile_pixel]) as u32;
+
+											if palette_entry != 0 {
+												let color;
+												if sprite.get_is_256_palette() {
+													color = Color::new(self.read_16(PALETTE_RAM_ADDR as u32 + SPRITE_PALETTE_START_ADDRESS + palette_entry * 2));
+												} else {
+													let palette_offset = sprite.get_palette_number() as u32 * 16;
+													let color_address = PALETTE_RAM_ADDR as u32 + SPRITE_PALETTE_START_ADDRESS + (palette_offset + palette_entry) * 2;
+													color = Color::new(self.read_16(color_address));
+												}
+
+												pixels[pixel_index] = color.get_red();
+												pixels[pixel_index + 1] = color.get_green();
+												pixels[pixel_index + 2] = color.get_blue();
+											}
 										}
 									}
 								}
 							}
 						}
 					}
-				}
-				EVideoMode::Mode3 => {}
-				EVideoMode::Mode4 => {
-					let starting_address = if self.get_disp_cnt().get_display_frame_1() { 0xA000 } else { 0x0 };
+					EVideoMode::Mode3 => {}
+					EVideoMode::Mode4 => {
+						let starting_address = if self.get_disp_cnt().get_display_frame_1() { 0xA000 } else { 0x0 };
 
-					for y in 0..160 {
-						for x in 0..240 {
-							let bitmap_index = (x as usize + (y as usize * 240));
-							let pixel_index = bitmap_index * 3;
-							let palette_entry = (self.vram[starting_address + bitmap_index]) as u32;
+						for y in 0..160 {
+							for x in 0..240 {
+								let bitmap_index = (x as usize + (y as usize * 240));
+								let pixel_index = bitmap_index * 3;
+								let palette_entry = (self.vram[starting_address + bitmap_index]) as u32;
 
-							let color = Color::new(self.read_16(PALETTE_RAM_ADDR as u32 + palette_entry * 2));
+								let color = Color::new(self.read_16(PALETTE_RAM_ADDR as u32 + palette_entry * 2));
 
-							pixels[pixel_index] = color.get_red();
-							pixels[pixel_index + 1] = color.get_green();
-							pixels[pixel_index + 2] = color.get_blue();
+								pixels[pixel_index] = color.get_red();
+								pixels[pixel_index + 1] = color.get_green();
+								pixels[pixel_index + 2] = color.get_blue();
+							}
 						}
 					}
+					EVideoMode::Mode5 => {}
 				}
-				EVideoMode::Mode5 => {}
 			}
 		}
 
@@ -620,15 +622,15 @@ impl PPU {
 	}
 }
 
-pub struct DispCnt<'a>(&'a mut Gba8BitSlice);
+pub struct DisplayControl(Gba16BitRegister);
 
-impl<'a> DispCnt<'a> {
-	pub fn new(register: &'a mut Gba8BitSlice) -> Self {
-		Self { 0: register }
+impl DisplayControl {
+	pub fn new() -> Self {
+		Self { 0: Gba16BitRegister::zeroed() }
 	}
 
-	pub fn get_bg_mode(&self) -> EVideoMode {
-		FromPrimitive::from_u8(self.0[0..=2].load_le()).unwrap()
+	pub fn get_bg_mode(&self) -> Option<EVideoMode> {
+		FromPrimitive::from_u8(self.0[0..=2].load_le())
 	}
 
 	pub fn get_display_frame_1(&self) -> bool {
@@ -663,7 +665,7 @@ impl<'a> DispCnt<'a> {
 		self.0[11]
 	}
 
-	pub fn get_screen_display_obj(&self) -> bool {
+	pub fn get_screen_display_sprites(&self) -> bool {
 		self.0[12]
 	}
 
@@ -680,11 +682,11 @@ impl<'a> DispCnt<'a> {
 	}
 }
 
-pub struct DispStat<'a>(&'a mut Gba8BitSlice);
+pub struct DisplayStatus(Gba16BitRegister);
 
-impl<'a> DispStat<'a> {
-	pub fn new(register: &'a mut Gba8BitSlice) -> Self {
-		Self { 0: register }
+impl DisplayStatus {
+	pub fn new() -> Self {
+		Self { 0: Gba16BitRegister::zeroed() }
 	}
 
 	pub fn get_v_blank(&self) -> bool {
@@ -728,9 +730,9 @@ impl<'a> DispStat<'a> {
 	}
 }
 
-struct BgCnt<'a>(&'a Gba8BitSlice);
+struct BackgroundControl<'a>(&'a Gba8BitSlice);
 
-impl<'a> BgCnt<'a> {
+impl<'a> BackgroundControl<'a> {
 	pub fn new(register: &'a Gba8BitSlice) -> Self {
 		Self { 0: register }
 	}
@@ -764,29 +766,9 @@ impl<'a> BgCnt<'a> {
 	}
 }
 
-struct BgPixelIncrement<'a>(&'a Gba8BitSlice);
+struct AffineMatrixFixed<'a>(&'a Gba8BitSlice);
 
-impl<'a> BgPixelIncrement<'a> {
-	pub fn new(register: &'a Gba8BitSlice) -> Self {
-		Self { 0: register }
-	}
-
-	pub fn get_fractional(&self) -> u8 {
-		self.0[0..=7].load_le()
-	}
-
-	pub fn get_integer(&self) -> u8 {
-		self.0[8..=14].load_le()
-	}
-
-	pub fn get_is_negative(&self) -> bool {
-		self.0[15]
-	}
-}
-
-struct AffineMatrixFloat<'a>(&'a Gba8BitSlice);
-
-impl<'a> AffineMatrixFloat<'a> {
+impl<'a> AffineMatrixFixed<'a> {
 	pub fn new(register: &'a Gba8BitSlice) -> Self {
 		Self { 0: register }
 	}
@@ -811,9 +793,9 @@ impl<'a> AffineMatrixFloat<'a> {
 	}
 }
 
-struct AffineBgPositionFloat<'a>(&'a Gba8BitSlice);
+struct AffineBgPositionFixed<'a>(&'a Gba8BitSlice);
 
-impl<'a> AffineBgPositionFloat<'a> {
+impl<'a> AffineBgPositionFixed<'a> {
 	pub fn new(register: &'a Gba8BitSlice) -> Self {
 		Self { 0: register }
 	}
@@ -1050,9 +1032,29 @@ impl MemoryInterface for PPU {
 				let addr = (address & PPU_REGISTERS_END) as usize;
 				self.registers[addr] = value;
 			}
-			PALETTE_RAM_ADDR => self.palette_ram[(address & 0x3ff) as usize] = value,
-			VRAM_ADDR => self.vram[(address & 0x17fff) as usize] = value,
-			OAM_ADDR => self.oam[(address & 0x3ff) as usize] = value,
+			PALETTE_RAM_ADDR => unsafe {
+				*(self.palette_ram.as_ptr().add(((address & 0x3ff) as usize) & !0x1) as *mut u16) = (value as u16) * 0x101;
+			},
+			VRAM_ADDR => {
+				// NOTE: Writes to BG (6000000h-600FFFFh) (or 6000000h-6013FFFh in Bitmap mode) and to Palette (5000000h-50003FFh) are writing the new 8bit value to BOTH upper and lower 8bits of the addressed halfword, ie. "[addr AND NOT 1]=data*101h"
+				let end_bg_address;
+				if let Some(video_mode) = self.get_disp_cnt().get_bg_mode() {
+					end_bg_address = if video_mode == EVideoMode::Mode3 || video_mode == EVideoMode::Mode4 || video_mode == EVideoMode::Mode5 {
+						0x0600_FFFF
+					} else {
+						0x0601_3FFF
+					};
+				} else {
+					end_bg_address = 0x0600_FFFF;
+				}
+
+				if address >= 0x0600_0000 && address < end_bg_address {
+					unsafe {
+						*(self.vram.as_ptr().add(((address & 0x17fff) as usize) & !0x1) as *mut u16) = (value as u16) * 0x101;
+					}
+				}
+			}
+			OAM_ADDR => {} // NOTE: No 8bit write is allowed to OAM
 			_ => {}
 		}
 	}

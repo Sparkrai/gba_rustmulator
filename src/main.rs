@@ -37,7 +37,7 @@ fn main() {
 	File::open("data/bios.gba").expect("Bios couldn't be opened!").read_to_end(&mut bios_data).unwrap();
 
 	let mut cartridge_data = Vec::<u8>::new();
-	if File::open("data/tests/thumb/thumb.gba")
+	if File::open("data/tests/arm/arm.gba")
 		.expect("Cartridge couldn't be opened!")
 		.read_to_end(&mut cartridge_data)
 		.is_ok()
@@ -259,111 +259,34 @@ fn main() {
 					}
 
 					if show_tiles_window {
-						let obj_tiles_start = match bus.ppu.get_disp_cnt().get_bg_mode() {
-							EVideoMode::Mode0 | EVideoMode::Mode1 | EVideoMode::Mode2 => 0x10000,
-							EVideoMode::Mode3 | EVideoMode::Mode4 | EVideoMode::Mode5 => 0x14000,
-						};
-
-						let mut pixels = vec![0.0; VRAM_SIZE * 3];
-						for i in 0..VRAM_SIZE as u32 {
-							let palette_color_index = if i >= obj_tiles_start {
-								bus.ppu.read_8(VRAM_ADDR + i) as u32 + 256u32
-							} else {
-								bus.ppu.read_8(VRAM_ADDR + i) as u32
+						if let Some(video_mode) = bus.ppu.get_disp_cnt().get_bg_mode() {
+							let obj_tiles_start = match video_mode {
+								EVideoMode::Mode0 | EVideoMode::Mode1 | EVideoMode::Mode2 => 0x10000,
+								EVideoMode::Mode3 | EVideoMode::Mode4 | EVideoMode::Mode5 => 0x14000,
 							};
-							// One color every 2 bytes
-							let color = Color::new(bus.ppu.read_16(PALETTE_RAM_ADDR + (palette_color_index * 2)));
 
-							const TILES_PER_ROW: u32 = 32;
-							let tile_offset = ((i / 64) % TILES_PER_ROW) * 8;
-							let row_offset = ((i % 64) / 8) * TILES_PER_ROW * 8;
-							let tiles_row_offset = ((i / 64) / TILES_PER_ROW) * 64 * TILES_PER_ROW;
-							let pixel_index = ((i % 8) + tile_offset + tiles_row_offset + row_offset) * 3;
+							let mut pixels = vec![0.0; VRAM_SIZE * 3];
+							for i in 0..VRAM_SIZE as u32 {
+								let palette_color_index = if i >= obj_tiles_start {
+									bus.ppu.read_8(VRAM_ADDR + i) as u32 + 256u32
+								} else {
+									bus.ppu.read_8(VRAM_ADDR + i) as u32
+								};
+								// One color every 2 bytes
+								let color = Color::new(bus.ppu.read_16(PALETTE_RAM_ADDR + (palette_color_index * 2)));
 
-							pixels[pixel_index as usize] = color.get_red();
-							pixels[pixel_index as usize + 1] = color.get_green();
-							pixels[pixel_index as usize + 2] = color.get_blue();
-						}
+								const TILES_PER_ROW: u32 = 32;
+								let tile_offset = ((i / 64) % TILES_PER_ROW) * 8;
+								let row_offset = ((i % 64) / 8) * TILES_PER_ROW * 8;
+								let tiles_row_offset = ((i / 64) / TILES_PER_ROW) * 64 * TILES_PER_ROW;
+								let pixel_index = ((i % 8) + tile_offset + tiles_row_offset + row_offset) * 3;
 
-						let mut image = glium::texture::RawImage2d::from_raw_rgb(pixels, (256, 384));
-						let gl_texture = glium::texture::Texture2d::new(&display, image).unwrap();
-
-						let texture = imgui_glium_renderer::Texture {
-							texture: Rc::new(gl_texture),
-							sampler: SamplerBehavior {
-								wrap_function: (SamplerWrapFunction::BorderClamp, SamplerWrapFunction::BorderClamp, SamplerWrapFunction::BorderClamp),
-								..Default::default()
-							},
-						};
-						let texture_id = renderer.textures().insert(texture);
-
-						build_tiles_debug_window(&bus, &mut show_tiles_window, &mut tiles_is_palette, texture_id, &&mut ui);
-					}
-
-					if show_sprites_window {
-						let sprite_tiles_start = match bus.ppu.get_disp_cnt().get_bg_mode() {
-							EVideoMode::Mode0 | EVideoMode::Mode1 | EVideoMode::Mode2 => SPRITE_TILES_START_ADDRESS,
-							EVideoMode::Mode3 | EVideoMode::Mode4 | EVideoMode::Mode5 => 0x14000,
-						};
-
-						let is_1d_mapping = bus.ppu.get_disp_cnt().get_sprite_1d_mapping();
-						let sprite_palette_start_address = PALETTE_RAM_ADDR + SPRITE_PALETTE_START_ADDRESS as u32;
-						let mut texture_ids = Vec::<TextureId>::with_capacity(128);
-						for i in (0..OAM_SIZE as u32).step_by(8) {
-							let data = [
-								bus.ppu.read_8(OAM_ADDR + i),
-								bus.ppu.read_8(OAM_ADDR + i + 1),
-								bus.ppu.read_8(OAM_ADDR + i + 2),
-								bus.ppu.read_8(OAM_ADDR + i + 3),
-								bus.ppu.read_8(OAM_ADDR + i + 4),
-								bus.ppu.read_8(OAM_ADDR + i + 5),
-								bus.ppu.read_8(OAM_ADDR + i + 6),
-								bus.ppu.read_8(OAM_ADDR + i + 7),
-							];
-							let sprite = SpriteEntry::new(data.view_bits::<Lsb0>());
-
-							let (width, height) = sprite.get_size();
-							let tiles_per_row = if sprite.get_is_256_palette() { 16 } else { 32 };
-							let tile_length = if sprite.get_is_256_palette() { 64 } else { 32 };
-							let start_tile_address = sprite_tiles_start + sprite.get_tile_index() * 32;
-
-							let mut pixels = vec![0.0; width * height * 3];
-							let tiles_x = width / 8;
-							for tx in 0..tiles_x {
-								for ty in 0..height / 8 {
-									let tile_address = if is_1d_mapping {
-										let tile = tx + ty * tiles_x;
-										start_tile_address + tile * tile_length
-									} else {
-										let tile = tx + ty * tiles_per_row;
-										start_tile_address + tile * tile_length
-									};
-
-									for x in 0..8 {
-										for y in 0..8 {
-											let tile_pixel = x + y * 8;
-											let palette_entry = bus.ppu.read_8(VRAM_ADDR + tile_address as u32 + tile_pixel) as u32;
-
-											let pixel_index = (tx * 8 + ty * 64 * tiles_x + (x + y * width as u32) as usize) * 3;
-
-											let color;
-											if sprite.get_is_256_palette() {
-												color = Color::new(bus.ppu.read_16(sprite_palette_start_address + palette_entry * 2));
-											} else {
-												let palette_offset = sprite.get_palette_number() as u32 * 16;
-												let color_address = (palette_offset + palette_entry) * 2;
-												color = Color::new(bus.ppu.read_16(sprite_palette_start_address + color_address));
-											}
-
-											pixels[pixel_index] = color.get_red();
-											pixels[pixel_index + 1] = color.get_green();
-											pixels[pixel_index + 2] = color.get_blue();
-										}
-									}
-								}
+								pixels[pixel_index as usize] = color.get_red();
+								pixels[pixel_index as usize + 1] = color.get_green();
+								pixels[pixel_index as usize + 2] = color.get_blue();
 							}
 
-							let mut image = glium::texture::RawImage2d::from_raw_rgb(pixels, (width as u32, height as u32));
+							let mut image = glium::texture::RawImage2d::from_raw_rgb(pixels, (256, 384));
 							let gl_texture = glium::texture::Texture2d::new(&display, image).unwrap();
 
 							let texture = imgui_glium_renderer::Texture {
@@ -375,10 +298,91 @@ fn main() {
 							};
 							let texture_id = renderer.textures().insert(texture);
 
-							texture_ids.push(texture_id);
+							build_tiles_debug_window(&bus, &mut show_tiles_window, &mut tiles_is_palette, texture_id, &&mut ui);
 						}
+					}
 
-						build_sprites_debug_window(&bus, &mut show_sprites_window, &texture_ids, &&mut ui);
+					if show_sprites_window {
+						if let Some(video_mode) = bus.ppu.get_disp_cnt().get_bg_mode() {
+							let sprite_tiles_start = match video_mode {
+								EVideoMode::Mode0 | EVideoMode::Mode1 | EVideoMode::Mode2 => SPRITE_TILES_START_ADDRESS,
+								EVideoMode::Mode3 | EVideoMode::Mode4 | EVideoMode::Mode5 => 0x14000,
+							};
+
+							let is_1d_mapping = bus.ppu.get_disp_cnt().get_sprite_1d_mapping();
+							let sprite_palette_start_address = PALETTE_RAM_ADDR + SPRITE_PALETTE_START_ADDRESS as u32;
+							let mut texture_ids = Vec::<TextureId>::with_capacity(128);
+							for i in (0..OAM_SIZE as u32).step_by(8) {
+								let data = [
+									bus.ppu.read_8(OAM_ADDR + i),
+									bus.ppu.read_8(OAM_ADDR + i + 1),
+									bus.ppu.read_8(OAM_ADDR + i + 2),
+									bus.ppu.read_8(OAM_ADDR + i + 3),
+									bus.ppu.read_8(OAM_ADDR + i + 4),
+									bus.ppu.read_8(OAM_ADDR + i + 5),
+									bus.ppu.read_8(OAM_ADDR + i + 6),
+									bus.ppu.read_8(OAM_ADDR + i + 7),
+								];
+								let sprite = SpriteEntry::new(data.view_bits::<Lsb0>());
+
+								let (width, height) = sprite.get_size();
+								let tiles_per_row = if sprite.get_is_256_palette() { 16 } else { 32 };
+								let tile_length = if sprite.get_is_256_palette() { 64 } else { 32 };
+								let start_tile_address = sprite_tiles_start + sprite.get_tile_index() * 32;
+
+								let mut pixels = vec![0.0; width * height * 3];
+								let tiles_x = width / 8;
+								for tx in 0..tiles_x {
+									for ty in 0..height / 8 {
+										let tile_address = if is_1d_mapping {
+											let tile = tx + ty * tiles_x;
+											start_tile_address + tile * tile_length
+										} else {
+											let tile = tx + ty * tiles_per_row;
+											start_tile_address + tile * tile_length
+										};
+
+										for x in 0..8 {
+											for y in 0..8 {
+												let tile_pixel = x + y * 8;
+												let palette_entry = bus.ppu.read_8(VRAM_ADDR + tile_address as u32 + tile_pixel) as u32;
+
+												let pixel_index = (tx * 8 + ty * 64 * tiles_x + (x + y * width as u32) as usize) * 3;
+
+												let color;
+												if sprite.get_is_256_palette() {
+													color = Color::new(bus.ppu.read_16(sprite_palette_start_address + palette_entry * 2));
+												} else {
+													let palette_offset = sprite.get_palette_number() as u32 * 16;
+													let color_address = (palette_offset + palette_entry) * 2;
+													color = Color::new(bus.ppu.read_16(sprite_palette_start_address + color_address));
+												}
+
+												pixels[pixel_index] = color.get_red();
+												pixels[pixel_index + 1] = color.get_green();
+												pixels[pixel_index + 2] = color.get_blue();
+											}
+										}
+									}
+								}
+
+								let mut image = glium::texture::RawImage2d::from_raw_rgb(pixels, (width as u32, height as u32));
+								let gl_texture = glium::texture::Texture2d::new(&display, image).unwrap();
+
+								let texture = imgui_glium_renderer::Texture {
+									texture: Rc::new(gl_texture),
+									sampler: SamplerBehavior {
+										wrap_function: (SamplerWrapFunction::BorderClamp, SamplerWrapFunction::BorderClamp, SamplerWrapFunction::BorderClamp),
+										..Default::default()
+									},
+								};
+								let texture_id = renderer.textures().insert(texture);
+
+								texture_ids.push(texture_id);
+							}
+
+							build_sprites_debug_window(&bus, &mut show_sprites_window, &texture_ids, &&mut ui);
+						}
 					}
 
 					if show_demo_window {
