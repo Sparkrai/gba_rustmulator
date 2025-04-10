@@ -80,13 +80,9 @@ pub fn decode(cpu: &mut CPU, bus: &mut SystemBus) {
 	let pc = cpu.get_current_pc();
 	if cpu.get_cpsr().get_t() {
 		let instruction = bus.read_16(pc);
-		//		print_assembly_line(disassemble_thumb(instruction), pc);
-
 		thumb::operate_thumb(instruction, cpu, bus);
 	} else {
 		let instruction = bus.read_32(pc);
-		//		print_assembly_line(disassemble_arm(instruction), pc);
-
 		arm::operate_arm(cpu, bus, instruction);
 	}
 }

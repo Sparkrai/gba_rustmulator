@@ -1,6 +1,6 @@
 mod mapped_registers;
 
-use crate::gpu::GPU;
+use crate::ppu::PPU;
 
 // Sizes
 pub const EWRAM_SIZE: usize = 256 * 1024;
@@ -45,7 +45,7 @@ pub struct SystemBus {
 	ewram: Box<[u8]>,
 	iwram: Box<[u8]>,
 	io_regs: Box<[u8]>,
-	gpu: GPU,
+	pub ppu: PPU,
 	cartridge_rom: Box<[u8]>,
 	cartridge_sram: Box<[u8]>,
 }
@@ -57,7 +57,7 @@ impl SystemBus {
 			ewram: vec![0; EWRAM_SIZE].into_boxed_slice(),
 			iwram: vec![0; IWRAM_SIZE].into_boxed_slice(),
 			io_regs: vec![0; IO_SIZE].into_boxed_slice(),
-			gpu: GPU::new(),
+			ppu: PPU::new(),
 			cartridge_rom: cartridge_data,
 			cartridge_sram: vec![0; CARTRIDGE_SRAM_SIZE].into_boxed_slice(),
 		}
@@ -69,7 +69,7 @@ impl SystemBus {
 			ewram: vec![0; EWRAM_SIZE].into_boxed_slice(),
 			iwram: vec![0; IWRAM_SIZE].into_boxed_slice(),
 			io_regs: vec![0; IO_SIZE].into_boxed_slice(),
-			gpu: GPU::new(),
+			ppu: PPU::new(),
 			cartridge_rom: vec![0; CARTRIDGE_ROM_SIZE].into_boxed_slice(),
 			cartridge_sram: vec![0; CARTRIDGE_SRAM_SIZE].into_boxed_slice(),
 		}
@@ -91,9 +91,13 @@ impl MemoryInterface for SystemBus {
 			IWRAM_ADDR => self.iwram[(address & 0x7fff) as usize],
 			IO_ADDR => {
 				let addr = if address & 0xffff == 0x8000 { 0x800 } else { address & 0x3fe };
-				self.io_regs[addr as usize]
+				if addr <= 0x56 {
+					self.ppu.read_8(address)
+				} else {
+					self.io_regs[addr as usize]
+				}
 			}
-			PALETTE_RAM_ADDR | VRAM_ADDR | OAM_ADDR => self.gpu.read_8(address),
+			PALETTE_RAM_ADDR | VRAM_ADDR | OAM_ADDR => self.ppu.read_8(address),
 			CARTRIDGE_WS0_LO | CARTRIDGE_WS0_HI | CARTRIDGE_WS1_LO | CARTRIDGE_WS1_HI | CARTRIDGE_WS2_LO | CARTRIDGE_WS2_HI => self.cartridge_rom[(address & 0xff_ffff) as usize],
 			CARTRIDGE_SRAM_LO => self.cartridge_sram[(address & 0xffff) as usize],
 			_ => 0x0, // TODO: Return proper invalid value
@@ -106,9 +110,13 @@ impl MemoryInterface for SystemBus {
 			IWRAM_ADDR => self.iwram[(address & 0x7fff) as usize] = value,
 			IO_ADDR => {
 				let addr = if address & 0xffff == 0x8000 { 0x800 } else { address & 0x3fe };
-				self.io_regs[addr as usize] = value
+				if addr <= 0x56 {
+					self.ppu.write_8(address, value);
+				} else {
+					self.io_regs[addr as usize] = value
+				}
 			}
-			PALETTE_RAM_ADDR | VRAM_ADDR | OAM_ADDR => self.gpu.write_8(address, value),
+			PALETTE_RAM_ADDR | VRAM_ADDR | OAM_ADDR => self.ppu.write_8(address, value),
 			CARTRIDGE_WS0_LO | CARTRIDGE_WS0_HI | CARTRIDGE_WS1_LO | CARTRIDGE_WS1_HI | CARTRIDGE_WS2_LO | CARTRIDGE_WS2_HI => {
 				self.cartridge_rom[(address & 0xff_ffff) as usize] = value
 			}
@@ -132,9 +140,13 @@ impl MemoryInterface for SystemBus {
 				IWRAM_ADDR => *(self.iwram.as_ptr().offset((address & 0x7fff) as isize) as *mut u16) as u16,
 				IO_ADDR => {
 					let addr = if address & 0xffff == 0x8000 { 0x800 } else { address & 0x3fe };
-					*(self.io_regs.as_ptr().offset((addr) as isize) as *mut u16) as u16
+					if addr <= 0x56 {
+						self.ppu.read_16(address)
+					} else {
+						*(self.io_regs.as_ptr().offset((addr) as isize) as *mut u16) as u16
+					}
 				}
-				PALETTE_RAM_ADDR | VRAM_ADDR | OAM_ADDR => self.gpu.read_16(address),
+				PALETTE_RAM_ADDR | VRAM_ADDR | OAM_ADDR => self.ppu.read_16(address),
 				CARTRIDGE_WS0_LO | CARTRIDGE_WS0_HI | CARTRIDGE_WS1_LO | CARTRIDGE_WS1_HI | CARTRIDGE_WS2_LO | CARTRIDGE_WS2_HI => {
 					*(self.cartridge_rom.as_ptr().offset((address & 0xff_ffff) as isize) as *mut u16) as u16
 				}
@@ -151,9 +163,13 @@ impl MemoryInterface for SystemBus {
 				IWRAM_ADDR => *(self.iwram.as_ptr().offset((address & 0x7fff) as isize) as *mut u16) = value,
 				IO_ADDR => {
 					let addr = if address & 0xffff == 0x8000 { 0x800 } else { address & 0x3fe };
-					*(self.io_regs.as_ptr().offset((addr) as isize) as *mut u16) = value
+					if addr <= 0x56 {
+						self.ppu.write_16(address, value);
+					} else {
+						*(self.io_regs.as_ptr().offset((addr) as isize) as *mut u16) = value
+					}
 				}
-				PALETTE_RAM_ADDR | VRAM_ADDR | OAM_ADDR => self.gpu.write_16(address, value),
+				PALETTE_RAM_ADDR | VRAM_ADDR | OAM_ADDR => self.ppu.write_16(address, value),
 				CARTRIDGE_WS0_LO | CARTRIDGE_WS0_HI | CARTRIDGE_WS1_LO | CARTRIDGE_WS1_HI | CARTRIDGE_WS2_LO | CARTRIDGE_WS2_HI => {
 					*(self.cartridge_rom.as_ptr().offset((address & 0xff_ffff) as isize) as *mut u16) = value
 				}
@@ -178,9 +194,13 @@ impl MemoryInterface for SystemBus {
 				IWRAM_ADDR => *(self.iwram.as_ptr().offset((address & 0x7fff) as isize) as *mut u32) as u32,
 				IO_ADDR => {
 					let addr = if address & 0xffff == 0x8000 { 0x800 } else { address & 0x3fe };
-					*(self.io_regs.as_ptr().offset((addr) as isize) as *mut u32) as u32
+					if addr <= 0x56 {
+						self.ppu.read_32(address)
+					} else {
+						*(self.io_regs.as_ptr().offset((addr) as isize) as *mut u32) as u32
+					}
 				}
-				PALETTE_RAM_ADDR | VRAM_ADDR | OAM_ADDR => self.gpu.read_32(address),
+				PALETTE_RAM_ADDR | VRAM_ADDR | OAM_ADDR => self.ppu.read_32(address),
 				CARTRIDGE_WS0_LO | CARTRIDGE_WS0_HI | CARTRIDGE_WS1_LO | CARTRIDGE_WS1_HI | CARTRIDGE_WS2_LO | CARTRIDGE_WS2_HI => {
 					*(self.cartridge_rom.as_ptr().offset((address & 0xff_ffff) as isize) as *mut u32) as u32
 				}
@@ -197,9 +217,13 @@ impl MemoryInterface for SystemBus {
 				IWRAM_ADDR => *(self.iwram.as_ptr().offset((address & 0x7fff) as isize) as *mut u32) = value,
 				IO_ADDR => {
 					let addr = if address & 0xffff == 0x8000 { 0x800 } else { address & 0x3fe };
-					*(self.io_regs.as_ptr().offset((addr) as isize) as *mut u32) = value
+					if addr <= 0x56 {
+						self.ppu.write_32(address, value);
+					} else {
+						*(self.io_regs.as_ptr().offset((addr) as isize) as *mut u32) = value
+					}
 				}
-				PALETTE_RAM_ADDR | VRAM_ADDR | OAM_ADDR => self.gpu.write_32(address, value),
+				PALETTE_RAM_ADDR | VRAM_ADDR | OAM_ADDR => self.ppu.write_32(address, value),
 				CARTRIDGE_WS0_LO | CARTRIDGE_WS0_HI | CARTRIDGE_WS1_LO | CARTRIDGE_WS1_HI | CARTRIDGE_WS2_LO | CARTRIDGE_WS2_HI => {
 					*(self.cartridge_rom.as_ptr().offset((address & 0xff_ffff) as isize) as *mut u32) = value
 				}

@@ -27,7 +27,7 @@ pub fn init(title: &str) -> System {
 		None => title,
 	};
 	let event_loop = EventLoop::new();
-	let context = glutin::ContextBuilder::new().with_vsync(true);
+	let context = glutin::ContextBuilder::new().with_vsync(false);
 	let builder = WindowBuilder::new().with_title(title.to_owned()).with_maximized(true);
 	let display = Display::new(builder, context, &event_loop).expect("Failed to initialize display");
 

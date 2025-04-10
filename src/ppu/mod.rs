@@ -8,6 +8,8 @@ use crate::system::MemoryInterface;
 use crate::system::{OAM_ADDR, PALETTE_RAM_ADDR, VRAM_ADDR};
 use num_traits::FromPrimitive;
 
+pub const SCREEN_TOTAL_PIXELS: usize = 38400;
+
 pub const PALETTE_RAM_SIZE: usize = 1 * 1024;
 pub const VRAM_SIZE: usize = 96 * 1024;
 pub const OAM_SIZE: usize = 1 * 1024;
@@ -68,20 +70,31 @@ pub enum EBlendMode {
 }
 
 pub struct Color {
-	data: Gba16BitRegister,
+	red: u8,
+	green: u8,
+	blue: u8,
 }
 
 impl Color {
+	pub fn new(data: u16) -> Self {
+		let bits = data.view_bits::<Lsb0>();
+		Self {
+			red: bits[0x0..=0x4].load_le(),
+			green: bits[0x5..=0x9].load_le(),
+			blue: bits[0xa..=0xe].load_le(),
+		}
+	}
+
 	pub fn get_red(&self) -> u8 {
-		self.data[0x0..=0x4].load_le()
+		self.red
 	}
 
 	pub fn get_green(&self) -> u8 {
-		self.data[0x5..=0x9].load_le()
+		self.green
 	}
 
 	pub fn get_blue(&self) -> u8 {
-		self.data[0xa..=0xe].load_le()
+		self.blue
 	}
 }
 
@@ -95,15 +108,15 @@ pub struct WindowDimensions {
 impl WindowDimensions {
 	pub fn new(h: &Gba8BitSlice, v: &Gba8BitSlice) -> Self {
 		Self {
-			x: h[8..16].load_le(),
-			x2: h[0..8].load_le() - 1,
-			y: v[8..16].load_le(),
-			y2: v[0..8].load_le() - 1,
+			x: h[8..16].load_le::<u8>(),
+			x2: h[0..8].load_le::<u8>() - 1,
+			y: v[8..16].load_le::<u8>(),
+			y2: v[0..8].load_le::<u8>() - 1,
 		}
 	}
 }
 
-pub struct GPU {
+pub struct PPU {
 	// Registers
 	registers: Box<[u8]>,
 	//	disp_cnt: Gba16BitRegister,
@@ -151,7 +164,7 @@ pub struct GPU {
 	oam: Box<[u8]>,
 }
 
-impl GPU {
+impl PPU {
 	pub fn new() -> Self {
 		let registers = vec![0; 0x56].into_boxed_slice();
 		Self {
@@ -197,6 +210,54 @@ impl GPU {
 			vram: vec![0; VRAM_SIZE].into_boxed_slice(),
 			oam: vec![0; OAM_SIZE].into_boxed_slice(),
 		}
+	}
+
+	pub fn render(&self) -> Vec<u8> {
+		let mut pixels = vec![0; SCREEN_TOTAL_PIXELS * 3];
+		let video_mode = self.get_disp_cnt().get_bg_mode();
+		println!("Current video mode: {:?}", video_mode);
+
+		match video_mode {
+			EVideoMode::Mode0 => {}
+			EVideoMode::Mode1 => {}
+			EVideoMode::Mode2 => {
+				let bg3_cnt = self.get_bg3_cnt();
+				let bg3_wraparound = bg3_cnt.get_overflow_wraparound();
+				let bg3_tile_size = match bg3_cnt.get_size() {
+					0x0 => 16,
+					0x1 => 32,
+					0x2 => 64,
+					0x3 => 128,
+					_ => {
+						panic!("IMPOSSIBLE!")
+					}
+				};
+
+				let bg3_x = self.get_bg3_x().get_value();
+				let bg3_y = self.get_bg3_y().get_value();
+
+				for x in 0..240 {
+					for y in 0..160 {
+						let pixel = (bg3_x as usize + x) * bg3_tile_size + bg3_y as usize + y;
+						let tile = pixel / 8;
+						let tile_number = self.vram[bg3_cnt.get_map_data_address() + tile] as usize;
+
+						let palette_color_index = self.vram[bg3_cnt.get_tile_data_address() + (tile_number * 64) + (pixel % 8)] as usize;
+						let color = Color::new(((self.palette_ram[palette_color_index + 1] as u16) << 8 | self.palette_ram[palette_color_index] as u16));
+
+						let pixel_index = x * 240 + y;
+						pixels[pixel_index] = color.get_red();
+						pixels[pixel_index + 1] = color.get_green();
+						pixels[pixel_index + 2] = color.get_blue();
+					}
+				}
+			}
+			EVideoMode::Mode3 => {}
+			EVideoMode::Mode4 => {}
+			EVideoMode::Mode5 => {}
+		}
+
+		pixels
 	}
 }
 
@@ -307,8 +368,8 @@ impl<'a> BgCnt<'a> {
 		self.0[0..=1].load_le()
 	}
 
-	pub fn get_tile_data_address(&self) -> u8 {
-		self.0[2..=3].load_le()
+	pub fn get_tile_data_address(&self) -> usize {
+		self.0[2..=3].load_le::<usize>() * 0x4000
 	}
 
 	pub fn get_mosaic(&self) -> bool {
@@ -319,8 +380,8 @@ impl<'a> BgCnt<'a> {
 		self.0[7]
 	}
 
-	pub fn get_map_data_address(&self) -> u8 {
-		self.0[8..=12].load_le()
+	pub fn get_map_data_address(&self) -> usize {
+		self.0[8..=12].load_le::<usize>() * 0x800
 	}
 
 	pub fn get_overflow_wraparound(&self) -> bool {
@@ -369,6 +430,17 @@ impl<'a> BgTransform<'a> {
 
 	pub fn get_is_negative(&self) -> bool {
 		self.0[27]
+	}
+
+	pub fn get_value(&self) -> f32 {
+		let mut result = self.get_integer() as f32;
+		result += self.get_fractional() as f32 * 1.0 / 256.0;
+
+		if self.get_is_negative() {
+			result *= -1.0;
+		}
+
+		result
 	}
 }
 
@@ -492,19 +564,19 @@ impl<'a> Mosaic<'a> {
 	}
 
 	pub fn get_bg_x_size(&self) -> u8 {
-		self.0[0..4].view_bits().load_le()
+		self.0[0..4].load_le()
 	}
 
 	pub fn get_bg_y_size(&self) -> u8 {
-		self.0[4..8].view_bits().load_le()
+		self.0[4..8].load_le()
 	}
 
 	pub fn get_obj_x_size(&self) -> u8 {
-		self.0[8..12].view_bits().load_le()
+		self.0[8..12].load_le()
 	}
 
 	pub fn get_obj_y_size(&self) -> u8 {
-		self.0[12..16].view_bits().load_le()
+		self.0[12..16].load_le()
 	}
 }
 
@@ -540,7 +612,7 @@ impl<'a> BlendControl<'a> {
 	}
 
 	pub fn get_blend_mode(&self) -> EBlendMode {
-		FromPrimitive::from_u8(self.0[6..=7].view_bits().load_le()).unwrap()
+		FromPrimitive::from_u8(self.0[6..=7].load_le()).unwrap()
 	}
 
 	pub fn get_blend_bg0_target(&self) -> bool {
@@ -568,7 +640,7 @@ impl<'a> BlendControl<'a> {
 	}
 }
 
-impl GPU {
+impl PPU {
 	fn get_disp_cnt(&self) -> DispCnt {
 		DispCnt::new(self.registers[DISP_CNT_RANGE].view_bits())
 	}
@@ -578,7 +650,7 @@ impl GPU {
 	}
 
 	fn get_vcount(&self) -> u8 {
-		self.registers[VCOUNT_RANGE].view_bits()[0..8].load_le()
+		self.registers[VCOUNT_RANGE].view_bits::<Lsb0>()[0..8].load_le()
 	}
 
 	fn get_bg0_cnt(&self) -> BgCnt {
@@ -599,35 +671,35 @@ impl GPU {
 
 	// FIXME: Check if 8 or 9!!!
 	fn get_bg0_hofs(&self) -> u16 {
-		self.registers[BG0_HOFS_RANGE].view_bits()[0..=9].load_le()
+		self.registers[BG0_HOFS_RANGE].view_bits::<Lsb0>()[0..=9].load_le()
 	}
 
 	fn get_bg0_vofs(&self) -> u16 {
-		self.registers[BG0_VOFS_RANGE].view_bits()[0..=9].load_le()
+		self.registers[BG0_VOFS_RANGE].view_bits::<Lsb0>()[0..=9].load_le()
 	}
 
-	fn get_bg1_hofs(&self) -> &Gba8BitSlice {
-		self.registers[BG1_HOFS_RANGE].view_bits()[0..=9].load_le()
+	fn get_bg1_hofs(&self) -> u16 {
+		self.registers[BG1_HOFS_RANGE].view_bits::<Lsb0>()[0..=9].load_le()
 	}
 
-	fn get_bg1_vofs(&self) -> &Gba8BitSlice {
-		self.registers[BG1_VOFS_RANGE].view_bits()[0..=9].load_le()
+	fn get_bg1_vofs(&self) -> u16 {
+		self.registers[BG1_VOFS_RANGE].view_bits::<Lsb0>()[0..=9].load_le()
 	}
 
-	fn get_bg2_hofs(&self) -> &Gba8BitSlice {
-		self.registers[BG2_HOFS_RANGE].view_bits()[0..=9].load_le()
+	fn get_bg2_hofs(&self) -> u16 {
+		self.registers[BG2_HOFS_RANGE].view_bits::<Lsb0>()[0..=9].load_le()
 	}
 
-	fn get_bg2_vofs(&self) -> &Gba8BitSlice {
-		self.registers[BG2_VOFS_RANGE].view_bits()[0..=9].load_le()
+	fn get_bg2_vofs(&self) -> u16 {
+		self.registers[BG2_VOFS_RANGE].view_bits::<Lsb0>()[0..=9].load_le()
 	}
 
-	fn get_bg3_hofs(&self) -> &Gba8BitSlice {
-		self.registers[BG3_HOFS_RANGE].view_bits()[0..=9].load_le()
+	fn get_bg3_hofs(&self) -> u16 {
+		self.registers[BG3_HOFS_RANGE].view_bits::<Lsb0>()[0..=9].load_le()
 	}
 
-	fn get_bg3_vofs(&self) -> &Gba8BitSlice {
-		self.registers[BG3_VOFS_RANGE].view_bits()[0..=9].load_le()
+	fn get_bg3_vofs(&self) -> u16 {
+		self.registers[BG3_VOFS_RANGE].view_bits::<Lsb0>()[0..=9].load_le()
 	}
 
 	fn get_bg2_pa(&self) -> BgPixelIncrement {
@@ -679,11 +751,11 @@ impl GPU {
 	}
 
 	fn get_win0_dimensions(&self) -> WindowDimensions {
-		WindowDimensions::new(self.registers[WIN0_H_RANGE].view_bits().load_le(), self.registers[WIN0_V_RANGE].view_bits().load_le())
+		WindowDimensions::new(self.registers[WIN0_H_RANGE].view_bits(), self.registers[WIN0_V_RANGE].view_bits())
 	}
 
 	fn get_win1_dimensions(&self) -> WindowDimensions {
-		WindowDimensions::new(self.registers[WIN1_H_RANGE].view_bits().load_le(), self.registers[WIN1_V_RANGE].view_bits().load_le())
+		WindowDimensions::new(self.registers[WIN1_H_RANGE].view_bits(), self.registers[WIN1_V_RANGE].view_bits())
 	}
 
 	fn get_win_in(&self) -> WinIn {
@@ -703,19 +775,19 @@ impl GPU {
 	}
 
 	fn get_a_blend_alpha(&self) -> u8 {
-		self.registers[BLD_ALPHA_RANGE].view_bits()[0..=4].load_le()
+		self.registers[BLD_ALPHA_RANGE].view_bits::<Lsb0>()[0..=4].load_le()
 	}
 
 	fn get_b_blend_alpha(&self) -> u8 {
-		self.registers[BLD_ALPHA_RANGE].view_bits()[8..=12].load_le()
+		self.registers[BLD_ALPHA_RANGE].view_bits::<Lsb0>()[8..=12].load_le()
 	}
 
 	fn get_blend_brightness(&self) -> u8 {
-		self.registers[BLD_Y_RANGE].view_bits()[0..=4].load_le()
+		self.registers[BLD_Y_RANGE].view_bits::<Lsb0>()[0..=4].load_le()
 	}
 }
 
-impl MemoryInterface for GPU {
+impl MemoryInterface for PPU {
 	fn read_8(&self, address: u32) -> u8 {
 		match address & 0xff00_0000 {
 			crate::system::IO_ADDR => {
@@ -747,11 +819,11 @@ impl MemoryInterface for GPU {
 			match address & 0xff00_0000 {
 				crate::system::IO_ADDR => {
 					let addr = (address & 0x56) as usize;
-					self.registers.view_bits::<Lsb0>()[addr..=addr + 1].load_le()
+					*(self.registers.as_ptr().add(addr) as *mut u16) as u16
 				}
-				PALETTE_RAM_ADDR => *(self.palette_ram.as_ptr().offset((address & 0x3ff) as isize) as *mut u16) as u16,
-				VRAM_ADDR => *(self.vram.as_ptr().offset((address & 0x17fff) as isize) as *mut u16) as u16,
-				OAM_ADDR => *(self.oam.as_ptr().offset((address & 0x3ff) as isize) as *mut u16) as u16,
+				PALETTE_RAM_ADDR => *(self.palette_ram.as_ptr().add((address & 0x3ff) as usize) as *mut u16) as u16,
+				VRAM_ADDR => *(self.vram.as_ptr().add((address & 0x17fff) as usize) as *mut u16) as u16,
+				OAM_ADDR => *(self.oam.as_ptr().add((address & 0x3ff) as usize) as *mut u16) as u16,
 				_ => 0x0, // TODO: Return proper invalid value
 			}
 		}
@@ -762,11 +834,11 @@ impl MemoryInterface for GPU {
 			match address & 0xff00_0000 {
 				crate::system::IO_ADDR => {
 					let addr = (address & 0x56) as usize;
-					self.registers.view_bits_mut::<Lsb0>()[addr..=addr + 1].store_le(value);
+					*(self.registers.as_ptr().add(addr) as *mut u16) = value;
 				}
-				PALETTE_RAM_ADDR => *(self.palette_ram.as_ptr().offset((address & 0x3ff) as isize) as *mut u16) = value,
-				VRAM_ADDR => *(self.vram.as_ptr().offset((address & 0x17fff) as isize) as *mut u16) = value,
-				OAM_ADDR => *(self.oam.as_ptr().offset((address & 0x3ff) as isize) as *mut u16) = value,
+				PALETTE_RAM_ADDR => *(self.palette_ram.as_ptr().add((address & 0x3ff) as usize) as *mut u16) = value,
+				VRAM_ADDR => *(self.vram.as_ptr().add((address & 0x17fff) as usize) as *mut u16) = value,
+				OAM_ADDR => *(self.oam.as_ptr().add((address & 0x3ff) as usize) as *mut u16) = value,
 				_ => {}
 			}
 		}
@@ -777,11 +849,11 @@ impl MemoryInterface for GPU {
 			match address & 0xff00_0000 {
 				crate::system::IO_ADDR => {
 					let addr = (address & 0x56) as usize;
-					self.registers.view_bits::<Lsb0>()[addr..=addr + 3].load_le()
+					*(self.registers.as_ptr().add(addr) as *mut u32) as u32
 				}
-				PALETTE_RAM_ADDR => *(self.palette_ram.as_ptr().offset((address & 0x3ff) as isize) as *mut u32) as u32,
-				VRAM_ADDR => *(self.vram.as_ptr().offset((address & 0x17fff) as isize) as *mut u32) as u32,
-				OAM_ADDR => *(self.oam.as_ptr().offset((address & 0x3ff) as isize) as *mut u32) as u32,
+				PALETTE_RAM_ADDR => *(self.palette_ram.as_ptr().add((address & 0x3ff) as usize) as *mut u32) as u32,
+				VRAM_ADDR => *(self.vram.as_ptr().add((address & 0x17fff) as usize) as *mut u32) as u32,
+				OAM_ADDR => *(self.oam.as_ptr().add((address & 0x3ff) as usize) as *mut u32) as u32,
 				_ => 0x0, // TODO: Return proper invalid value
 			}
 		}
@@ -792,11 +864,11 @@ impl MemoryInterface for GPU {
 			match address & 0xff00_0000 {
 				crate::system::IO_ADDR => {
 					let addr = (address & 0x56) as usize;
-					self.registers.view_bits_mut::<Lsb0>()[addr..=addr + 3].store_le(value);
+					*(self.registers.as_ptr().add(addr) as *mut u32) = value;
 				}
-				PALETTE_RAM_ADDR => *(self.palette_ram.as_ptr().offset((address & 0x3ff) as isize) as *mut u32) = value,
-				VRAM_ADDR => *(self.vram.as_ptr().offset((address & 0x17fff) as isize) as *mut u32) = value,
-				OAM_ADDR => *(self.oam.as_ptr().offset((address & 0x3ff) as isize) as *mut u32) = value,
+				PALETTE_RAM_ADDR => *(self.palette_ram.as_ptr().add((address & 0x3ff) as usize) as *mut u32) = value,
+				VRAM_ADDR => *(self.vram.as_ptr().add((address & 0x17fff) as usize) as *mut u32) = value,
+				OAM_ADDR => *(self.oam.as_ptr().add((address & 0x3ff) as usize) as *mut u32) = value,
 				_ => {}
 			}
 		}

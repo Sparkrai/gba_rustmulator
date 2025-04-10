@@ -16,10 +16,10 @@
     glium = "0.29"
     num-traits = "0.2"
     num-derive = "0.2"
+    spin_sleep = "1.0"
 
 [profile.dev]
-    debuginfo = 2
-	opt-level = 0
+	opt-level = 1
 	
 [profile.release]
 	lto = true
