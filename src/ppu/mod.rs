@@ -3,13 +3,14 @@ use std::ops::Range;
 use bitvec::prelude::*;
 use num_derive::*;
 
-use crate::arm7tdmi::{Gba16BitRegister, Gba8BitSlice};
+use crate::arm7tdmi::{sign_extend, Gba16BitRegister, Gba8BitSlice};
 use crate::system::MemoryInterface;
 use crate::system::{OAM_ADDR, PALETTE_RAM_ADDR, VRAM_ADDR};
 use num_traits::FromPrimitive;
 
 pub const PPU_REGISTERS_END: u32 = 0x56;
 pub const SCREEN_TOTAL_PIXELS: usize = 38400;
+pub const SPRITE_TILES_START_ADDRESS: usize = 0x10000;
 
 pub const PALETTE_RAM_SIZE: usize = 1 * 1024;
 pub const VRAM_SIZE: usize = 96 * 1024;
@@ -135,8 +136,8 @@ impl<'a> SpriteEntry<'a> {
 		Self { 0: registers }
 	}
 
-	pub fn get_y_coord(&self) -> u16 {
-		self.0[0..8].load_le()
+	pub fn get_y_coord(&self) -> i8 {
+		self.0[0..8].load_le::<u8>() as i8
 	}
 
 	pub fn get_is_affine(&self) -> bool {
@@ -179,8 +180,8 @@ impl<'a> SpriteEntry<'a> {
 		}
 	}
 
-	pub fn get_x_coord(&self) -> u16 {
-		self.0[0x10..0x19].load_le()
+	pub fn get_x_coord(&self) -> i16 {
+		sign_extend(self.0[0x10..0x19].load_le::<u16>(), 10) as i16
 	}
 
 	pub fn get_rotation_data_index(&self) -> u8 {
@@ -480,9 +481,7 @@ impl PPU {
 					let bg3_x = self.get_bg3_x().get_value();
 					let bg3_y = self.get_bg3_y().get_value();
 
-					let sprites = self.oam.chunks_exact(8).map(|x| SpriteEntry::new(x.view_bits()));
-
-					// TODO: Use spries!!!
+					// Backgrounds
 					for x in 0..240 {
 						for y in 0..160 {
 							// TODO: Use transform!!!
@@ -497,6 +496,49 @@ impl PPU {
 							pixels[pixel_index] = color.get_red();
 							pixels[pixel_index + 1] = color.get_green();
 							pixels[pixel_index + 2] = color.get_blue();
+						}
+					}
+
+					// Reverse sprites for priority order (Sprite 0 = Front, Last Sprite = back)
+					let is_1d_mapping = self.get_disp_cnt().get_sprite_1d_mapping();
+					let sprites = self.oam.chunks_exact(8).map(|x| SpriteEntry::new(x.view_bits())).rev();
+					for sprite in sprites.filter(|s| s.get_is_affine() || s.get_is_virtual_double_sized()) {
+						let (width, height) = sprite.get_size();
+						let start_tile_address = SPRITE_TILES_START_ADDRESS + sprite.get_tile_index() as usize * 32;
+						for x in 0..width {
+							for y in 0..height {
+								let pixel_x = sprite.get_x_coord() + x as i16;
+								let pixel_y = sprite.get_y_coord() + y as i8;
+
+								// Y has range -127/127 (within 160 vertical screen size)
+								if pixel_x >= 0 && pixel_y >= 0 && pixel_x < 240 {
+									let pixel_index = (pixel_x as usize + (pixel_y as usize * 240)) * 3;
+
+									let tile_pixel = (x + y * 8) as usize;
+
+									let palette_color_index;
+									if is_1d_mapping {
+										palette_color_index = (self.vram[start_tile_address + tile_pixel]) as usize;
+									} else {
+										// TODO: 2D Mapping!!!
+										palette_color_index = 0;
+									}
+
+									let color;
+									if sprite.get_is_256_palette() {
+										color =
+											Color::new((self.palette_ram[256 + palette_color_index * 2 + 1] as u16) << 8 | self.palette_ram[256 + palette_color_index * 2] as u16);
+									} else {
+										let palette_offset = sprite.get_palette_number() as usize * 16;
+										let color_address = 256 + (palette_offset + palette_color_index) * 2;
+										color = Color::new((self.palette_ram[color_address + 1] as u16) << 8 | self.palette_ram[color_address] as u16);
+									}
+
+									pixels[pixel_index] = color.get_red();
+									pixels[pixel_index + 1] = color.get_green();
+									pixels[pixel_index + 2] = color.get_blue();
+								}
+							}
 						}
 					}
 				}
@@ -529,7 +571,7 @@ impl<'a> DispCnt<'a> {
 		self.0[5]
 	}
 
-	pub fn get_obj_vram_mapping_one_dimensional(&self) -> bool {
+	pub fn get_sprite_1d_mapping(&self) -> bool {
 		self.0[6]
 	}
 
@@ -565,7 +607,7 @@ impl<'a> DispCnt<'a> {
 		self.0[14]
 	}
 
-	pub fn get_obj_window_display(&self) -> bool {
+	pub fn get_sprite_window_display(&self) -> bool {
 		self.0[15]
 	}
 }
