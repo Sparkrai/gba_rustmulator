@@ -2,7 +2,7 @@ use bitvec::order::Lsb0;
 use bitvec::prelude::BitView;
 use num_traits::{FromPrimitive, PrimInt};
 
-use crate::arm7tdmi::cpu::{CPU, LINK_REGISTER_REGISTER, PROGRAM_COUNTER_REGISTER};
+use crate::arm7tdmi::cpu::{CPU, LINK_REGISTER_REGISTER, PROGRAM_COUNTER_REGISTER, STACK_POINTER_REGISTER};
 use crate::arm7tdmi::{cond_passed, EShiftType};
 use crate::arm7tdmi::{sign_extend, EOperatingMode};
 use crate::memory::MemoryBus;
@@ -179,6 +179,107 @@ pub fn operate_arm(cpu: &mut CPU, bus: &mut MemoryBus, instruction: u32) {
 				let new_address = if u { rn.wrapping_add(offset) } else { rn.wrapping_sub(offset) };
 				cpu.set_register_value(rn_index, new_address);
 			}
+		} else if (0x0e00_0000 & instruction) == 0x0800_0000 {
+			let l = (0x0010_0000 & instruction) != 0;
+			let w = (0x0020_0000 & instruction) != 0;
+			let s = (0x0040_0000 & instruction) != 0;
+			let u = (0x0080_0000 & instruction) != 0;
+			let p = (0x0100_0000 & instruction) != 0;
+
+			// NOTE: Forced alignment!!!
+			let rn_index = ((instruction & 0x000f_0000) >> 16) as u8;
+			let rn = cpu.get_register_value(rn_index) & !0x3;
+			let reg_list = (0x0000_ffff & instruction).view_bits::<Lsb0>().to_bitvec().into_boxed_bitslice();
+
+			// Addressing Mode
+			let start_address;
+			let end_address;
+			if u {
+				if p {
+					start_address = rn + 4;
+					end_address = rn.wrapping_add(4 * (reg_list.count_ones() as u32));
+				} else {
+					start_address = rn;
+					end_address = rn.wrapping_add(4 * (reg_list.count_ones() as u32)) - 4;
+				}
+			} else {
+				if p {
+					start_address = rn.wrapping_sub(4 * (reg_list.count_ones() as u32));
+					end_address = rn - 4;
+				} else {
+					start_address = rn.wrapping_sub(4 * (reg_list.count_ones() as u32)) + 4;
+					end_address = rn;
+				}
+			}
+
+			let store_rn = reg_list[rn_index as usize];
+			// NOTE: UNPREDICTABLE BEHAVIOR
+			if w && !(l && store_rn) {
+				if u {
+					cpu.set_register_value(rn_index, rn.wrapping_add(4 * (reg_list.count_ones() as u32)))
+				} else {
+					cpu.set_register_value(rn_index, rn.wrapping_sub(4 * (reg_list.count_ones() as u32)))
+				}
+			}
+
+			let user_bank_transfer = if s {
+				if l {
+					!reg_list[PROGRAM_COUNTER_REGISTER as usize]
+				} else {
+					true
+				}
+			} else {
+				false
+			};
+
+			let old_mode = cpu.get_operating_mode();
+			if user_bank_transfer {
+				cpu.set_operating_mode(EOperatingMode::UserMode);
+			}
+
+			if l {
+				let mut address = start_address;
+				for i in 0..15 {
+					if reg_list[i] {
+						cpu.set_register_value(i as u8, bus.read_32(address));
+						address = address.wrapping_add(4);
+					}
+				}
+
+				if reg_list[PROGRAM_COUNTER_REGISTER as usize] {
+					if s {
+						let spsr = cpu.get_spsr(cpu.get_operating_mode()).get_value();
+						cpu.get_mut_cpsr().set_value(spsr);
+					}
+
+					let value = bus.read_32(address) & !0x3;
+					cpu.set_register_value(PROGRAM_COUNTER_REGISTER, value);
+					address = address.wrapping_add(4);
+				}
+				debug_assert_eq!(end_address, address.wrapping_sub(4));
+
+				cpu.set_register_value(STACK_POINTER_REGISTER, end_address);
+			} else {
+				let mut address = start_address;
+				let mut first = true;
+				for i in 0..16 {
+					if reg_list[i] {
+						// NOTE: UNPREDICTABLE BEHAVIOR
+						let value = if first && i == rn_index as usize { rn } else { cpu.get_register_value(i as u8) };
+
+						bus.write_32(address, value);
+						address = address.wrapping_add(4);
+
+						first = false;
+					}
+				}
+
+				debug_assert_eq!(end_address, address.wrapping_sub(4));
+			}
+
+			if user_bank_transfer {
+				cpu.set_operating_mode(old_mode);
+			}
 		} else if (0x0c00_0000 & instruction) == 0x0000_0000 {
 			// ALU
 			let i = (0x0200_0000 & instruction) > 0;
@@ -195,7 +296,7 @@ pub fn operate_arm(cpu: &mut CPU, bus: &mut MemoryBus, instruction: u32) {
 				if rot == 0 {
 					shifter_carry_out = cpu.get_cpsr().get_c();
 				} else {
-					shifter_carry_out = (shifter_operand & 0x800_0000) > 0;
+					shifter_carry_out = (shifter_operand & 0x8000_0000) != 0;
 				}
 			} else {
 				let rm = cpu.get_register_value((instruction & 0x0000_000f) as u8);
@@ -327,7 +428,7 @@ pub fn operate_arm(cpu: &mut CPU, bus: &mut MemoryBus, instruction: u32) {
 								panic!("UNPREDICTABLE!");
 							}
 						} else {
-							cpu.get_mut_cpsr().set_n((alu_out & 0x800_0000) > 0);
+							cpu.get_mut_cpsr().set_n((alu_out & 0x8000_0000) != 0);
 							cpu.get_mut_cpsr().set_z(alu_out == 0);
 							cpu.get_mut_cpsr().set_c(shifter_carry_out);
 						}
@@ -347,7 +448,7 @@ pub fn operate_arm(cpu: &mut CPU, bus: &mut MemoryBus, instruction: u32) {
 								panic!("UNPREDICTABLE!");
 							}
 						} else {
-							cpu.get_mut_cpsr().set_n((alu_out & 0x800_0000) > 0);
+							cpu.get_mut_cpsr().set_n((alu_out & 0x8000_0000) != 0);
 							cpu.get_mut_cpsr().set_z(alu_out == 0);
 							cpu.get_mut_cpsr().set_c(shifter_carry_out);
 						}
@@ -371,7 +472,7 @@ pub fn operate_arm(cpu: &mut CPU, bus: &mut MemoryBus, instruction: u32) {
 							// Overflow is sign changes
 							let overflow = (rn as i32).is_positive() != (shifter_operand as i32).is_positive() && (rn as i32).is_positive() != (alu_out as i32).is_positive();
 
-							cpu.get_mut_cpsr().set_n((alu_out & 0x800_0000) > 0);
+							cpu.get_mut_cpsr().set_n((alu_out & 0x8000_0000) != 0);
 							cpu.get_mut_cpsr().set_z(alu_out == 0);
 							cpu.get_mut_cpsr().set_c(!borrowed);
 							cpu.get_mut_cpsr().set_v(overflow);
@@ -397,7 +498,7 @@ pub fn operate_arm(cpu: &mut CPU, bus: &mut MemoryBus, instruction: u32) {
 							let overflow =
 								(shifter_operand as i32).is_positive() != (rn as i32).is_positive() && (shifter_operand as i32).is_positive() != (alu_out as i32).is_positive();
 
-							cpu.get_mut_cpsr().set_n((alu_out & 0x800_0000) > 0);
+							cpu.get_mut_cpsr().set_n((alu_out & 0x8000_0000) != 0);
 							cpu.get_mut_cpsr().set_z(alu_out == 0);
 							cpu.get_mut_cpsr().set_c(!borrowed);
 							cpu.get_mut_cpsr().set_v(overflow);
@@ -422,7 +523,7 @@ pub fn operate_arm(cpu: &mut CPU, bus: &mut MemoryBus, instruction: u32) {
 							// Overflow if sign changes
 							let overflow = (rn as i32).is_positive() == (shifter_operand as i32).is_positive() && (rn as i32).is_positive() != (alu_out as i32).is_positive();
 
-							cpu.get_mut_cpsr().set_n((alu_out & 0x800_0000) > 0);
+							cpu.get_mut_cpsr().set_n((alu_out & 0x8000_0000) != 0);
 							cpu.get_mut_cpsr().set_z(alu_out == 0);
 							cpu.get_mut_cpsr().set_c(borrowed);
 							cpu.get_mut_cpsr().set_v(overflow);
@@ -452,7 +553,7 @@ pub fn operate_arm(cpu: &mut CPU, bus: &mut MemoryBus, instruction: u32) {
 								&& (rn as i32).is_positive() != (alu_out_first as i32).is_positive())
 								|| ((alu_out_first as i32).is_positive() == (c as i32).is_positive() && (alu_out_first as i32).is_positive() != (alu_out as i32).is_positive());
 
-							cpu.get_mut_cpsr().set_n((alu_out & 0x800_0000) > 0);
+							cpu.get_mut_cpsr().set_n((alu_out & 0x8000_0000) != 0);
 							cpu.get_mut_cpsr().set_z(alu_out == 0);
 							cpu.get_mut_cpsr().set_c(borrowed);
 							cpu.get_mut_cpsr().set_v(overflow);
@@ -482,7 +583,7 @@ pub fn operate_arm(cpu: &mut CPU, bus: &mut MemoryBus, instruction: u32) {
 								&& (rn as i32).is_positive() != (alu_out_first as i32).is_positive())
 								|| ((alu_out_first as i32).is_positive() != (c as i32).is_positive() && (alu_out_first as i32).is_positive() != (alu_out as i32).is_positive());
 
-							cpu.get_mut_cpsr().set_n((alu_out & 0x800_0000) > 0);
+							cpu.get_mut_cpsr().set_n((alu_out & 0x8000_0000) != 0);
 							cpu.get_mut_cpsr().set_z(alu_out == 0);
 							cpu.get_mut_cpsr().set_c(!borrowed);
 							cpu.get_mut_cpsr().set_v(overflow);
@@ -512,7 +613,7 @@ pub fn operate_arm(cpu: &mut CPU, bus: &mut MemoryBus, instruction: u32) {
 								&& (shifter_operand as i32).is_positive() != (alu_out_first as i32).is_positive())
 								|| ((alu_out_first as i32).is_positive() != (c as i32).is_positive() && (alu_out_first as i32).is_positive() != (alu_out as i32).is_positive());
 
-							cpu.get_mut_cpsr().set_n((alu_out & 0x800_0000) > 0);
+							cpu.get_mut_cpsr().set_n((alu_out & 0x8000_0000) != 0);
 							cpu.get_mut_cpsr().set_z(alu_out == 0);
 							cpu.get_mut_cpsr().set_c(!borrowed);
 							cpu.get_mut_cpsr().set_v(overflow);
@@ -523,7 +624,7 @@ pub fn operate_arm(cpu: &mut CPU, bus: &mut MemoryBus, instruction: u32) {
 				0x8 => {
 					let alu_out = rn & shifter_operand;
 
-					cpu.get_mut_cpsr().set_n((alu_out & 0x800_0000) > 0);
+					cpu.get_mut_cpsr().set_n((alu_out & 0x8000_0000) != 0);
 					cpu.get_mut_cpsr().set_z(alu_out == 0);
 					cpu.get_mut_cpsr().set_c(shifter_carry_out);
 				}
@@ -531,7 +632,7 @@ pub fn operate_arm(cpu: &mut CPU, bus: &mut MemoryBus, instruction: u32) {
 				0x9 => {
 					let alu_out = rn ^ shifter_operand;
 
-					cpu.get_mut_cpsr().set_n((alu_out & 0x800_0000) > 0);
+					cpu.get_mut_cpsr().set_n((alu_out & 0x8000_0000) != 0);
 					cpu.get_mut_cpsr().set_z(alu_out == 0);
 					cpu.get_mut_cpsr().set_c(shifter_carry_out);
 				}
@@ -542,7 +643,7 @@ pub fn operate_arm(cpu: &mut CPU, bus: &mut MemoryBus, instruction: u32) {
 					// Overflow is sign changes
 					let overflow = (rn as i32).is_positive() != (shifter_operand as i32).is_positive() && (rn as i32).is_positive() != (alu_out as i32).is_positive();
 
-					cpu.get_mut_cpsr().set_n((alu_out & 0x800_0000) > 0);
+					cpu.get_mut_cpsr().set_n((alu_out & 0x8000_0000) != 0);
 					cpu.get_mut_cpsr().set_z(alu_out == 0);
 					cpu.get_mut_cpsr().set_c(!borrowed);
 					cpu.get_mut_cpsr().set_v(overflow);
@@ -554,7 +655,7 @@ pub fn operate_arm(cpu: &mut CPU, bus: &mut MemoryBus, instruction: u32) {
 					// Overflow is sign changes
 					let overflow = (rn as i32).is_positive() == (shifter_operand as i32).is_positive() && (rn as i32).is_positive() != (alu_out as i32).is_positive();
 
-					cpu.get_mut_cpsr().set_n((alu_out & 0x800_0000) > 0);
+					cpu.get_mut_cpsr().set_n((alu_out & 0x8000_0000) != 0);
 					cpu.get_mut_cpsr().set_z(alu_out == 0);
 					cpu.get_mut_cpsr().set_c(borrowed);
 					cpu.get_mut_cpsr().set_v(overflow);
@@ -573,7 +674,7 @@ pub fn operate_arm(cpu: &mut CPU, bus: &mut MemoryBus, instruction: u32) {
 							}
 						} else {
 							let rd = cpu.get_register_value(rd_index);
-							cpu.get_mut_cpsr().set_n((rd & 0x800_0000) > 0);
+							cpu.get_mut_cpsr().set_n((rd & 0x8000_0000) != 0);
 							cpu.get_mut_cpsr().set_z(rd == 0);
 							cpu.get_mut_cpsr().set_c(shifter_carry_out);
 						}
@@ -589,7 +690,7 @@ pub fn operate_arm(cpu: &mut CPU, bus: &mut MemoryBus, instruction: u32) {
 							*cpu.get_mut_cpsr() = cpu.get_spsr(cpu.get_operating_mode()).clone();
 						}
 					} else if s {
-						cpu.get_mut_cpsr().set_n((rd & 0x800_0000) > 0);
+						cpu.get_mut_cpsr().set_n((rd & 0x8000_0000) != 0);
 						cpu.get_mut_cpsr().set_z(rd == 0);
 						cpu.get_mut_cpsr().set_c(shifter_carry_out);
 					}
@@ -608,7 +709,7 @@ pub fn operate_arm(cpu: &mut CPU, bus: &mut MemoryBus, instruction: u32) {
 								panic!("UNPREDICTABLE!");
 							}
 						} else {
-							cpu.get_mut_cpsr().set_n((alu_out & 0x800_0000) > 0);
+							cpu.get_mut_cpsr().set_n((alu_out & 0x8000_0000) != 0);
 							cpu.get_mut_cpsr().set_z(alu_out == 0);
 							cpu.get_mut_cpsr().set_c(shifter_carry_out);
 						}
@@ -628,7 +729,7 @@ pub fn operate_arm(cpu: &mut CPU, bus: &mut MemoryBus, instruction: u32) {
 								panic!("UNPREDICTABLE!");
 							}
 						} else {
-							cpu.get_mut_cpsr().set_n((alu_out & 0x800_0000) > 0);
+							cpu.get_mut_cpsr().set_n((alu_out & 0x8000_0000) != 0);
 							cpu.get_mut_cpsr().set_z(alu_out == 0);
 							cpu.get_mut_cpsr().set_c(shifter_carry_out);
 						}

@@ -1,5 +1,5 @@
 use bitvec::prelude::*;
-use num_traits::FromPrimitive;
+use num_traits::{FromPrimitive, ToPrimitive};
 
 use crate::arm7tdmi::psr::CPSR;
 use crate::arm7tdmi::EOperatingMode;
@@ -231,5 +231,9 @@ impl CPU {
 
 	pub fn get_operating_mode(&self) -> EOperatingMode {
 		FromPrimitive::from_u32(self.cpsr.get_mode_bits().load_le()).unwrap()
+	}
+
+	pub fn set_operating_mode(&mut self, mode: EOperatingMode) {
+		self.cpsr.set_mode_bits(mode.to_u8().unwrap());
 	}
 }
