@@ -9,7 +9,8 @@
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-    bitvec = "0.21"
+    modular-bitfield = "0.11"
+    bit_field = "0.10"
     imgui = "0.7"
     imgui-glium-renderer = "0.7"
     imgui-winit-support = "0.7"
@@ -18,12 +19,19 @@
     num-derive = "0.3"
     spin_sleep = "1.0"
     clipboard = "0.5"
+    bitvec = "0.21"
 
 [dev-dependencies]
     criterion = "0.3"
+    bitvec = "0.21"
+    bitfield = "0.13"
 
 [[bench]]
-    name = "bit_registers"
+    name = "bit_libraries"
+    harness = false
+
+[[bench]]
+    name = "bios"
     harness = false
 
 [profile.dev]

@@ -1,6 +1,8 @@
 use bitfield::*;
 use bitvec::prelude::*;
-use criterion::{BenchmarkId, Criterion, black_box, criterion_group, criterion_main};
+use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion};
+use modular_bitfield::prelude::bitfield as modfield;
+use modular_bitfield::specifiers::*;
 
 struct BitVecTest {
 	data: BitArray<Lsb0, [u16; 1]>,
@@ -33,14 +35,20 @@ impl BitVecTest {
 }
 
 bitfield! {
-	pub struct BitfieldTest {
-		data: u16
-	}
+	pub struct BitfieldTest(u16);
 	impl Debug;
 	// The fields default to u16
 	pub get_test_bit, set_test_bit: 3;
 	pub _, set_other_bit: 1;
 	pub u8, get_bits, set_bits: 3, 0;
+}
+
+#[modfield(bits = 6)]
+pub struct ModularBitfieldTest {
+	test_bit: bool,
+	#[skip(getters)]
+	other_bit: bool,
+	bits: B4,
 }
 
 fn test_register_bitvec(value: u8) -> u8 {
@@ -69,10 +77,23 @@ fn test_register_bitfield(value: u8) -> u8 {
 	result
 }
 
+fn test_register_modular_bitfield(value: u8) -> u8 {
+	let mut test_register = ModularBitfieldTest::new();
+
+	test_register.set_test_bit(black_box(true));
+	test_register.set_other_bit(black_box(true));
+	test_register.set_bits(value & 7);
+
+	let mut result = 0;
+	result |= (test_register.test_bit() as u8) | test_register.bits();
+
+	result
+}
+
 fn bench_bit_registers(c: &mut Criterion) {
 	let mut group = c.benchmark_group("Bit Register");
 	for i in (0..=255).step_by(32) {
-		group.bench_with_input(BenchmarkId::new("bitvec", i), &i, |b, i| b.iter(|| test_register_bitvec(*i)));
+		group.bench_with_input(BenchmarkId::new("modular_bitfield", i), &i, |b, i| b.iter(|| test_register_modular_bitfield(*i)));
 		group.bench_with_input(BenchmarkId::new("bitfield", i), &i, |b, i| b.iter(|| test_register_bitfield(*i)));
 	}
 	group.finish();
@@ -105,10 +126,24 @@ fn test_number_bitfield(value: u8) -> u8 {
 	result
 }
 
+
+fn test_number_modular_bitfield(value: u8) -> u8 {
+	let mut test_number = 0u32;
+
+	bit_field::BitField::set_bit(&mut test_number, 3, black_box(true));
+	bit_field::BitField::set_bit(&mut test_number, 1, black_box(true));
+	bit_field::BitField::set_bits(&mut test_number, 0..4, (value as u32) & 7);
+
+	let mut result = 0;
+	result |= (bit_field::BitField::get_bit(&test_number, 3) as u8) | bit_field::BitField::get_bits(&test_number, 0..4) as u8;
+
+	result
+}
+
 fn bench_bit_number(c: &mut Criterion) {
 	let mut group = c.benchmark_group("Bit Number");
 	for i in (0..=255).step_by(32) {
-		group.bench_with_input(BenchmarkId::new("bitvec", i), &i, |b, i| b.iter(|| test_number_bitvec(*i)));
+		group.bench_with_input(BenchmarkId::new("modular_bitfield", i), &i, |b, i| b.iter(|| test_number_modular_bitfield(*i)));
 		group.bench_with_input(BenchmarkId::new("bitfield", i), &i, |b, i| b.iter(|| test_number_bitfield(*i)));
 	}
 	group.finish();
