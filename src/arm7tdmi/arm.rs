@@ -127,7 +127,7 @@ pub fn operate_arm(cpu: &mut CPU, bus: &mut SystemBus, instruction: u32) {
 					cpu.set_register_value(rn_index, alu_out as u32);
 
 					if s {
-						cpu.get_mut_cpsr().set_n(alu_out.is_negative());
+						cpu.get_mut_cpsr().set_n((alu_out as u64 & 0x8000_0000_0000_0000) != 0);
 						cpu.get_mut_cpsr().set_z(alu_out == 0);
 						cpu.get_mut_cpsr().set_c(false);
 						cpu.get_mut_cpsr().set_v(false);
@@ -238,7 +238,7 @@ pub fn operate_arm(cpu: &mut CPU, bus: &mut SystemBus, instruction: u32) {
 							if shift == 0 {
 								offset = 0;
 							} else {
-								offset = rm >> shift;
+								offset = rm.unsigned_shr(shift);
 							}
 						}
 						EShiftType::ASR => {
@@ -342,7 +342,7 @@ pub fn operate_arm(cpu: &mut CPU, bus: &mut SystemBus, instruction: u32) {
 				cpu.set_operating_mode(old_mode);
 			}
 		} else if (0x0e00_0090 & instruction) == 0x0000_0090 {
-			//LDRSHD/STRSHD Halfword, Doubleword, Signed Data Transfer
+			//LDRSH/STRH Halfword, Doubleword, Signed Data Transfer
 			let p = (0x0100_0000 & instruction) != 0;
 			let u = (0x0080_0000 & instruction) != 0;
 			let i = (0x0040_0000 & instruction) != 0;
@@ -641,7 +641,7 @@ pub fn operate_arm(cpu: &mut CPU, bus: &mut SystemBus, instruction: u32) {
 								shifter_operand = rm;
 								shifter_carry_out = cpu.get_cpsr().get_c();
 							} else if rs < 32 {
-								shifter_operand = rm >> rs;
+								shifter_operand = rm.unsigned_shr(rs);
 								shifter_carry_out = rm.view_bits::<Lsb0>()[(rs - 1) as usize];
 							} else if rs == 32 {
 								shifter_operand = 0;
@@ -698,7 +698,7 @@ pub fn operate_arm(cpu: &mut CPU, bus: &mut SystemBus, instruction: u32) {
 								shifter_operand = 0;
 								shifter_carry_out = (rm & 0x8000_0000) > 0;
 							} else {
-								shifter_operand = rm >> shift;
+								shifter_operand = rm.unsigned_shr(shift);
 								shifter_carry_out = rm.view_bits::<Lsb0>()[(shift - 1) as usize];
 							}
 						}

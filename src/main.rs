@@ -16,7 +16,7 @@ use system::*;
 
 use crate::debugging::disassembling::disassemble_instruction;
 use crate::debugging::{build_cpu_debug_window, build_io_registers_window, build_memory_debug_window, build_sprites_debug_window, build_tiles_debug_window};
-use crate::ppu::{Color, EVideoMode, SpriteEntry, OAM_SIZE, SPRITE_PALETTE_START_ADDRESS, SPRITE_TILES_START_ADDRESS, VRAM_SIZE};
+use crate::ppu::{EVideoMode, SpriteEntry, OAM_SIZE, SPRITE_PALETTE_START_INDEX, SPRITE_TILES_START_ADDRESS, VRAM_SIZE};
 use crate::windowing::System;
 
 mod arm7tdmi;
@@ -36,7 +36,7 @@ fn main() {
 	File::open("data/bios.gba").expect("Bios couldn't be opened!").read_to_end(&mut bios_data).unwrap();
 
 	let mut cartridge_data = Vec::<u8>::new();
-	if File::open("data/demos/sbb_aff.gba")
+	if File::open("data/tests/ppu/shades.gba")
 		.expect("Cartridge couldn't be opened!")
 		.read_to_end(&mut cartridge_data)
 		.is_ok()
@@ -185,7 +185,7 @@ fn main() {
 								show_tiles_window = true;
 							}
 							if MenuItem::new(im_str!("Sprites")).build(&ui) {
-								show_tiles_window = true;
+								show_sprites_window = true;
 							}
 						});
 						ui.menu(im_str!("Help"), true, || {
@@ -250,12 +250,12 @@ fn main() {
 							let mut pixels = vec![0.0; VRAM_SIZE * 3];
 							for i in 0..VRAM_SIZE as u32 {
 								let palette_color_index = if i >= obj_tiles_start {
-									bus.ppu.read_8(VRAM_ADDR + i) as u32 + 256u32
+									bus.ppu.read_8(VRAM_ADDR + i) as usize + 256
 								} else {
-									bus.ppu.read_8(VRAM_ADDR + i) as u32
+									bus.ppu.read_8(VRAM_ADDR + i) as usize
 								};
 								// One color every 2 bytes
-								let color = Color::new(bus.ppu.read_16(PALETTE_RAM_ADDR + (palette_color_index * 2)));
+								let color = bus.ppu.palette_ram[palette_color_index];
 
 								const TILES_PER_ROW: u32 = 32;
 								let tile_offset = ((i / 64) % TILES_PER_ROW) * 8;
@@ -292,7 +292,6 @@ fn main() {
 							};
 
 							let is_1d_mapping = bus.ppu.get_disp_cnt().get_sprite_1d_mapping();
-							let sprite_palette_start_address = PALETTE_RAM_ADDR + SPRITE_PALETTE_START_ADDRESS as u32;
 							let mut texture_ids = Vec::<TextureId>::with_capacity(128);
 							for i in (0..OAM_SIZE as u32).step_by(8) {
 								let data = [
@@ -327,17 +326,23 @@ fn main() {
 										for x in 0..8 {
 											for y in 0..8 {
 												let tile_pixel = x + y * 8;
-												let palette_entry = bus.ppu.read_8(VRAM_ADDR + tile_address as u32 + tile_pixel) as u32;
+												let palette_entry = bus.ppu.read_8(VRAM_ADDR + tile_address as u32 + tile_pixel) as usize;
 
 												let pixel_index = (tx * 8 + ty * 64 * tiles_x + (x + y * width as u32) as usize) * 3;
 
 												let color;
 												if sprite.get_is_256_palette() {
-													color = Color::new(bus.ppu.read_16(sprite_palette_start_address + palette_entry * 2));
+													let palette_entry = bus.ppu.read_8(VRAM_ADDR + tile_address as u32 + tile_pixel) as usize;
+
+													color = bus.ppu.palette_ram[SPRITE_PALETTE_START_INDEX + palette_entry];
 												} else {
-													let palette_offset = sprite.get_palette_number() as u32 * 16;
-													let color_address = (palette_offset + palette_entry) * 2;
-													color = Color::new(bus.ppu.read_16(sprite_palette_start_address + color_address));
+													let palette_entry = bus.ppu.read_8(VRAM_ADDR + tile_address as u32 + tile_pixel / 2) as usize;
+
+													let palette_offset = sprite.get_palette_number() as usize * 16;
+													let palette_index = (palette_entry >> ((tile_pixel & 1) * 4)) & 0xf;
+													let color_address = SPRITE_PALETTE_START_INDEX + palette_offset + palette_index;
+
+													color = bus.ppu.palette_ram[color_address];
 												}
 
 												pixels[pixel_index] = color.get_red();
@@ -404,8 +409,8 @@ fn main() {
 								VirtualKeyCode::Left => bus.io_regs.get_mut_key_input().set_left(released),
 								VirtualKeyCode::Up => bus.io_regs.get_mut_key_input().set_up(released),
 								VirtualKeyCode::Down => bus.io_regs.get_mut_key_input().set_down(released),
-								VirtualKeyCode::LShift => bus.io_regs.get_mut_key_input().set_button_r(released),
-								VirtualKeyCode::Space => bus.io_regs.get_mut_key_input().set_button_l(released),
+								VirtualKeyCode::LShift => bus.io_regs.get_mut_key_input().set_button_l(released),
+								VirtualKeyCode::LAlt => bus.io_regs.get_mut_key_input().set_button_r(released),
 								_ => {}
 							}
 						}

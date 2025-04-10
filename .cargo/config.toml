@@ -1,0 +1,10 @@
+[target.'cfg(all(target_arch = "x86_64", target_os = "windows"))']
+    rustflags = ["-Ctarget-cpu=native"]
+
+[profile.release]
+    lto = true
+    codegen-units = 1
+    opt-level = 3
+
+[profile.dev.package."*"]
+    opt-level = 3

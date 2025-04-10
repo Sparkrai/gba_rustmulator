@@ -40,7 +40,7 @@ pub fn build_memory_debug_window(
 
 			ui.text("Current instruction highlighted");
 
-			if ui.button(im_str!("Step"), [0.0, 0.0]) || ui.is_key_down(Key::DownArrow) && *debug_mode {
+			if ui.button(im_str!("Step"), [0.0, 0.0]) || ui.is_key_down(Key::Space) && *debug_mode {
 				*execute_step = true;
 				*address = cpu.get_current_pc();
 			}

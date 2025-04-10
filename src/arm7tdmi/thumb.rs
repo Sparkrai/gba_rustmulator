@@ -212,7 +212,7 @@ pub fn operate_thumb(instruction: u16, cpu: &mut CPU, bus: &mut SystemBus) {
 					alu_out = rd;
 					shifter_carry_out = cpu.get_cpsr().get_c();
 				} else if rs < 32 {
-					alu_out = rd >> rs;
+					alu_out = rd.unsigned_shr(rs);
 					shifter_carry_out = rd.view_bits::<Lsb0>()[(rs - 1) as usize];
 				} else if rs == 32 {
 					alu_out = 0;

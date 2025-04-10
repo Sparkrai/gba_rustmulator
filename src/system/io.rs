@@ -19,7 +19,9 @@ pub struct KeyInput {
 
 impl KeyInput {
 	pub fn new() -> Self {
-		Self { data: bitarr![Lsb0, u16; 1; 16] }
+		Self {
+			data: bitarr![Lsb0, u16; 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0],
+		}
 	}
 
 	pub fn set_button_a(&mut self, value: bool) {
@@ -253,6 +255,21 @@ impl IF {
 	}
 }
 
+/// Undocumented - Post Boot / Debug Control (R/W)
+pub struct PostBootFlag {
+	data: Gba8BitRegister,
+}
+
+impl PostBootFlag {
+	pub fn new() -> Self {
+		Self { data: bitarr![Lsb0, u8; 0; 8] }
+	}
+
+	pub fn get_is_not_first(&self) -> bool {
+		self.data[0]
+	}
+}
+
 /// Undocumented - Low Power Mode Control (W)
 pub struct HaltControl {
 	data: Gba8BitRegister,
@@ -275,7 +292,10 @@ pub struct SoundBias {
 
 impl SoundBias {
 	pub fn new() -> Self {
-		Self { data: bitarr![Lsb0, u16; 0; 16] }
+		let mut result = Self { data: bitarr![Lsb0, u16; 0; 16] };
+		result.data.store_le(0x200u16);
+
+		result
 	}
 
 	pub fn get_bias_level(&self) -> u16 {
@@ -298,6 +318,7 @@ pub struct IORegisters {
 	interrupt_enable: IE,
 	interrupt_request: IF,
 	ime: bool,
+	post_flag: PostBootFlag,
 	halt_cnt: HaltControl,
 	pub halted: bool,
 }
@@ -310,6 +331,7 @@ impl IORegisters {
 			interrupt_enable: IE::new(),
 			interrupt_request: IF::new(),
 			ime: false,
+			post_flag: PostBootFlag::new(),
 			halt_cnt: HaltControl::new(),
 			halted: false,
 		}
@@ -354,6 +376,7 @@ impl MemoryInterface for IORegisters {
 			IE_ADDRESS => self.interrupt_enable.data[shift..shift + 8].load_le(),
 			IF_ADDRESS => self.interrupt_request.data[shift..shift + 8].load_le(),
 			IME_ADDRESS => return if shift == 0 { self.ime as u8 } else { 0 },
+			POSTFLG_ADDRESS => return if shift == 0 { self.post_flag.data.load_le() } else { 0 },
 			_ => 0x0, // TODO: Return proper invalid value
 		}
 	}
@@ -362,6 +385,7 @@ impl MemoryInterface for IORegisters {
 		let addr = if address & 0xffff == 0x8000 { 0x800 } else { address & 0x00ff_ffff };
 		let shift = (addr as usize & 0x1) * 8;
 		match addr & !0x1 {
+			SOUNDBIAS_ADDRESS => self.sound_bias.data[shift..shift + 8].store_le(value),
 			IE_ADDRESS => self.interrupt_enable.data[shift..shift + 8].store_le(value),
 			IF_ADDRESS => {
 				let current_if = self.interrupt_request.data.load_le::<u16>();
@@ -376,9 +400,10 @@ impl MemoryInterface for IORegisters {
 				if addr == HALTCNT_ADDRESS {
 					self.halt_cnt.data.store_le(value);
 					self.halted = true;
+				} else {
+					self.post_flag.data.store_le(value);
 				}
 			}
-			SOUNDBIAS_ADDRESS => self.sound_bias.data[shift..shift + 8].store_le(value),
 			_ => {}
 		}
 	}
@@ -386,11 +411,12 @@ impl MemoryInterface for IORegisters {
 	fn read_16(&self, address: u32) -> u16 {
 		let addr = if address & 0xffff == 0x8000 { 0x800 } else { address & 0x00ff_ffff };
 		match addr {
+			SOUNDBIAS_ADDRESS => self.sound_bias.data.load_le(),
 			KEYINPUT_ADDRESS => self.key_input.data.load_le(),
 			IE_ADDRESS => self.interrupt_enable.data.load_le(),
 			IF_ADDRESS => self.interrupt_request.data.load_le(),
 			IME_ADDRESS => self.ime as u16,
-			SOUNDBIAS_ADDRESS => self.sound_bias.data.load_le(),
+			POSTFLG_ADDRESS => self.post_flag.data.load_le(),
 			_ => 0x0, // TODO: Return proper invalid value
 		}
 	}
@@ -407,6 +433,7 @@ impl MemoryInterface for IORegisters {
 				self.ime = value.view_bits::<Lsb0>()[0];
 			}
 			POSTFLG_ADDRESS => {
+				self.post_flag.data.store_le(value as u8);
 				self.halt_cnt.data.store_le((value >> 8) as u8);
 				self.halted = true;
 			}
@@ -418,11 +445,11 @@ impl MemoryInterface for IORegisters {
 	fn read_32(&self, address: u32) -> u32 {
 		let addr = if address & 0xffff == 0x8000 { 0x800 } else { address & 0x00ff_ffff };
 		match addr {
+			SOUNDBIAS_ADDRESS => self.sound_bias.data.load_le::<u32>(),
 			KEYINPUT_ADDRESS => self.key_input.data.load_le(),
 			IE_ADDRESS => self.interrupt_enable.data.load_le::<u32>() | (self.interrupt_request.data.load_le::<u32>() << 16),
 			IME_ADDRESS => self.ime as u32,
-			POSTFLG_ADDRESS => self.halt_cnt.data.load_le::<u32>() << 8,
-			SOUNDBIAS_ADDRESS => self.sound_bias.data.load_le::<u32>(),
+			POSTFLG_ADDRESS => self.post_flag.data.load_le(),
 			_ => 0x0, // TODO: Return proper invalid value
 		}
 	}
@@ -434,12 +461,13 @@ impl MemoryInterface for IORegisters {
 				self.interrupt_enable.data.store_le(value as u16);
 
 				let current_if = self.interrupt_request.data.load_le::<u16>();
-				self.interrupt_request.data.store_le(!(value as u16) & current_if);
+				self.interrupt_request.data.store_le(!((value << 16) as u16) & current_if);
 			}
 			IME_ADDRESS => {
 				self.ime = value.view_bits::<Lsb0>()[0];
 			}
 			POSTFLG_ADDRESS => {
+				self.post_flag.data.store_le(value as u8);
 				self.halt_cnt.data.store_le((value >> 8) as u8);
 				self.halted = true;
 			}
