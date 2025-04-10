@@ -10,7 +10,7 @@ use system::*;
 
 use crate::debugging::disassembling::disassemble_instruction;
 use crate::debugging::{build_cpu_debug_window, build_io_registers_window, build_memory_debug_window, build_sprites_debug_window, build_tiles_debug_window};
-use crate::ppu::{Color, EVideoMode, SpriteEntry, OAM_SIZE, PALETTE_RAM_SIZE, SPRITE_TILES_START_ADDRESS, VRAM_SIZE};
+use crate::ppu::{Color, EVideoMode, SpriteEntry, OAM_SIZE, PALETTE_RAM_SIZE, SPRITE_PALETTE_START_ADDRESS, SPRITE_TILES_START_ADDRESS, VRAM_SIZE};
 use crate::windowing::System;
 use glium::glutin::event::{Event, WindowEvent};
 use glium::glutin::event_loop::ControlFlow;
@@ -301,12 +301,13 @@ fn main() {
 					}
 
 					if show_sprites_window {
-						let obj_tiles_start = match bus.ppu.get_disp_cnt().get_bg_mode() {
-							EVideoMode::Mode0 | EVideoMode::Mode1 | EVideoMode::Mode2 => 0x10000,
+						let sprite_tiles_start = match bus.ppu.get_disp_cnt().get_bg_mode() {
+							EVideoMode::Mode0 | EVideoMode::Mode1 | EVideoMode::Mode2 => SPRITE_TILES_START_ADDRESS,
 							EVideoMode::Mode3 | EVideoMode::Mode4 | EVideoMode::Mode5 => 0x14000,
 						};
 
 						let is_1d_mapping = bus.ppu.get_disp_cnt().get_sprite_1d_mapping();
+						let sprite_palette_start_address = PALETTE_RAM_ADDR + SPRITE_PALETTE_START_ADDRESS as u32;
 						let mut texture_ids = Vec::<TextureId>::with_capacity(128);
 						for i in (0..OAM_SIZE as u32).step_by(8) {
 							let data = [
@@ -316,19 +317,22 @@ fn main() {
 								bus.ppu.read_8(OAM_ADDR + i + 3),
 								bus.ppu.read_8(OAM_ADDR + i + 4),
 								bus.ppu.read_8(OAM_ADDR + i + 5),
+								bus.ppu.read_8(OAM_ADDR + i + 6),
+								bus.ppu.read_8(OAM_ADDR + i + 7),
 							];
 							let sprite = SpriteEntry::new(data.view_bits::<Lsb0>());
 
 							let (width, height) = sprite.get_size();
 							let tiles_per_row = if sprite.get_is_256_palette() { 16 } else { 32 };
 							let tile_length = if sprite.get_is_256_palette() { 64 } else { 32 };
-							let start_tile_address = SPRITE_TILES_START_ADDRESS + sprite.get_tile_index() as usize * 32;
+							let start_tile_address = sprite_tiles_start + sprite.get_tile_index() * 32;
 
 							let mut pixels = vec![0.0; width * height * 3];
-							for tx in 0..width / 8 {
+							let tiles_x = width / 8;
+							for tx in 0..tiles_x {
 								for ty in 0..height / 8 {
 									let tile_address = if is_1d_mapping {
-										let tile = tx + ty * width / 8;
+										let tile = tx + ty * tiles_x;
 										start_tile_address + tile * tile_length
 									} else {
 										let tile = tx + ty * tiles_per_row;
@@ -340,15 +344,15 @@ fn main() {
 											let tile_pixel = x + y * 8;
 											let palette_entry = bus.ppu.read_8(VRAM_ADDR + tile_address as u32 + tile_pixel) as u32;
 
-											let pixel_index = tx * 8 + ty * width + tile_pixel as usize * 3;
+											let pixel_index = (tx * 8 + ty * 64 * tiles_x + (x + y * width as u32) as usize) * 3;
 
 											let color;
 											if sprite.get_is_256_palette() {
-												color = Color::new(bus.ppu.read_16(PALETTE_RAM_ADDR + palette_entry * 2));
+												color = Color::new(bus.ppu.read_16(sprite_palette_start_address + palette_entry * 2));
 											} else {
 												let palette_offset = sprite.get_palette_number() as u32 * 16;
-												let color_address = 256 + (palette_offset + palette_entry) * 2;
-												color = Color::new(bus.ppu.read_16(PALETTE_RAM_ADDR + color_address));
+												let color_address = (palette_offset + palette_entry) * 2;
+												color = Color::new(bus.ppu.read_16(sprite_palette_start_address + color_address));
 											}
 
 											pixels[pixel_index] = color.get_red();

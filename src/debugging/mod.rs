@@ -24,7 +24,7 @@ pub fn build_memory_debug_window(
 	Window::new(im_str!("Current Memory"))
 		.size([600.0, 500.0], Condition::FirstUseEver)
 		.opened(show_memory_window)
-		.position([750.0, 75.0], Condition::Always)
+		.position([750.0, 75.0], Condition::FirstUseEver)
 		.build(ui, || {
 			if !*debug_mode {
 				if *breakpoint_set {
@@ -144,13 +144,13 @@ pub fn build_tiles_debug_window(bus: &SystemBus, show_tiles_window: &mut bool, i
 
 pub fn build_sprites_debug_window(bus: &SystemBus, show_sprites_window: &mut bool, texture_ids: &[TextureId], ui: &&mut Ui) {
 	Window::new(im_str!("Sprites"))
-		.size([0.0, 0.0], Condition::FirstUseEver)
+		.size([600.0, 700.0], Condition::FirstUseEver)
 		.opened(show_sprites_window)
 		.position([1400.0, 75.0], Condition::FirstUseEver)
 		.build(ui, || {
-			ui.columns(16, im_str!(""), true);
+			ui.columns(8, im_str!(""), true);
 			for texture_id in texture_ids {
-				Image::new(*texture_id, [16.0, 16.0]).build(&ui);
+				Image::new(*texture_id, [64.0, 64.0]).build(&ui);
 				ui.next_column();
 			}
 		});
