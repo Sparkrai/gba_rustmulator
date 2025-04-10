@@ -1,6 +1,6 @@
-use bitvec::prelude::*;
+use bitfield::*;
 
-use crate::system::{Gba16BitRegister, Gba8BitRegister, MemoryInterface};
+use crate::system::MemoryInterface;
 
 //pub const IO_REGISTERS_END: u32 = 0x3fe;
 
@@ -12,303 +12,82 @@ pub const IME_ADDRESS: u32 = 0x208;
 pub const POSTFLG_ADDRESS: u32 = 0x300;
 pub const HALTCNT_ADDRESS: u32 = 0x301;
 
-/// Key Status (R)
-pub struct KeyInput {
-	data: Gba16BitRegister,
+bitfield! {
+	/// Key Status (R)
+	pub struct KeyInput(u16);
+	impl Debug;
+	pub set_button_a, _: 0;
+	pub set_button_b, _: 1;
+	pub set_select, _: 2;
+	pub set_start, _: 3;
+	pub set_right, _: 4;
+	pub set_left, _: 5;
+	pub set_up, _: 6;
+	pub set_down, _: 7;
+	pub set_button_r, _: 8;
+	pub set_button_l, _: 9;
 }
 
-impl KeyInput {
-	pub fn new() -> Self {
-		Self {
-			data: bitarr![Lsb0, u16; 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0],
-		}
-	}
-
-	pub fn set_button_a(&mut self, value: bool) {
-		self.data.set(0, value);
-	}
-
-	pub fn set_button_b(&mut self, value: bool) {
-		self.data.set(1, value);
-	}
-
-	pub fn set_select(&mut self, value: bool) {
-		self.data.set(2, value);
-	}
-
-	pub fn set_start(&mut self, value: bool) {
-		self.data.set(3, value);
-	}
-
-	pub fn set_right(&mut self, value: bool) {
-		self.data.set(4, value);
-	}
-
-	pub fn set_left(&mut self, value: bool) {
-		self.data.set(5, value);
-	}
-
-	pub fn set_up(&mut self, value: bool) {
-		self.data.set(6, value);
-	}
-
-	pub fn set_down(&mut self, value: bool) {
-		self.data.set(7, value);
-	}
-
-	pub fn set_button_r(&mut self, value: bool) {
-		self.data.set(8, value);
-	}
-
-	pub fn set_button_l(&mut self, value: bool) {
-		self.data.set(9, value);
-	}
+bitfield! {
+	/// Interrupt Enable Register (R/W)
+	pub struct IE(u16);
+	impl Debug;
+	pub get_v_blank, _: 0;
+	pub get_h_blank, _: 1;
+	pub get_v_counter_match, _: 2;
+	pub get_timer0_overflow, _: 3;
+	pub get_timer1_overflow, _: 4;
+	pub get_timer2_overflow, _: 5;
+	pub get_timer3_overflow, _: 6;
+	pub get_serial_communication, _: 7;
+	pub get_dma0, _: 8;
+	pub get_dma1, _: 9;
+	pub get_dma2, _: 10;
+	pub get_dma3, _: 11;
+	pub get_keypad, _: 12;
+	pub get_cartridge, _: 13;
 }
 
-/// Interrupt Enable Register (R/W)
-pub struct IE {
-	data: Gba16BitRegister,
+bitfield! {
+	/// Interrupt Request Flags / IRQ Acknowledge (R/W)
+	pub struct IF(u16);
+	impl Debug;
+	pub get_v_blank, set_v_blank: 0;
+	pub get_h_blank, set_h_blank: 1;
+	pub get_v_counter_match, set_v_counter_match: 2;
+	pub get_timer0_overflow, set_timer0_overflow: 3;
+	pub get_timer1_overflow, set_timer1_overflow: 4;
+	pub get_timer2_overflow, set_timer2_overflow: 5;
+	pub get_timer3_overflow, set_timer3_overflow: 6;
+	pub get_serial_communication, set_serial_communication: 7;
+	pub get_dma0, set_dma0: 8;
+	pub get_dma1, set_dma1: 9;
+	pub get_dma2, set_dma2: 10;
+	pub get_dma3, set_dma3: 11;
+	pub get_keypad, set_keypad: 12;
+	pub get_cartridge, set_cartridge: 13;
 }
 
-impl IE {
-	pub fn new() -> Self {
-		Self { data: bitarr![Lsb0, u16; 0; 16] }
-	}
-
-	pub fn get_v_blank(&self) -> bool {
-		self.data[0]
-	}
-
-	pub fn get_h_blank(&self) -> bool {
-		self.data[1]
-	}
-
-	pub fn get_v_counter_match(&self) -> bool {
-		self.data[2]
-	}
-
-	pub fn get_timer0_overflow(&self) -> bool {
-		self.data[3]
-	}
-
-	pub fn get_timer1_overflow(&self) -> bool {
-		self.data[4]
-	}
-
-	pub fn get_timer2_overflow(&self) -> bool {
-		self.data[5]
-	}
-
-	pub fn get_timer3_overflow(&self) -> bool {
-		self.data[6]
-	}
-
-	pub fn get_serial_communication(&self) -> bool {
-		self.data[7]
-	}
-
-	pub fn get_dma0(&self) -> bool {
-		self.data[8]
-	}
-
-	pub fn get_dma1(&self) -> bool {
-		self.data[9]
-	}
-
-	pub fn get_dma2(&self) -> bool {
-		self.data[10]
-	}
-
-	pub fn get_dma3(&self) -> bool {
-		self.data[11]
-	}
-
-	pub fn get_keypad(&self) -> bool {
-		self.data[12]
-	}
-
-	pub fn get_cartridge(&self) -> bool {
-		self.data[13]
-	}
+bitfield! {
+	/// Undocumented - Post Boot / Debug Control (R/W)
+	pub struct PostBootFlag(u8);
+	impl Debug;
+	pub get_is_not_first, _: 0;
 }
 
-/// Interrupt Request Flags / IRQ Acknowledge (R/W)
-pub struct IF {
-	data: Gba16BitRegister,
+bitfield! {
+	/// Undocumented - Low Power Mode Control (W)
+	pub struct HaltControl(u8);
+	impl Debug;
+	pub get_is_stop, _: 7;
 }
 
-impl IF {
-	pub fn new() -> Self {
-		Self { data: bitarr![Lsb0, u16; 0; 16] }
-	}
-
-	pub fn get_v_blank(&self) -> bool {
-		self.data[0]
-	}
-
-	pub fn set_v_blank(&mut self, value: bool) {
-		self.data.set(0, value);
-	}
-
-	pub fn get_h_blank(&self) -> bool {
-		self.data[1]
-	}
-
-	pub fn set_h_blank(&mut self, value: bool) {
-		self.data.set(1, value);
-	}
-
-	pub fn get_v_counter_match(&self) -> bool {
-		self.data[2]
-	}
-
-	pub fn set_v_counter_match(&mut self, value: bool) {
-		self.data.set(2, value);
-	}
-
-	pub fn get_timer0_overflow(&self) -> bool {
-		self.data[3]
-	}
-
-	pub fn set_timer0_overflow(&mut self, value: bool) {
-		self.data.set(3, value);
-	}
-
-	pub fn get_timer1_overflow(&self) -> bool {
-		self.data[4]
-	}
-
-	pub fn set_timer1_overflow(&mut self, value: bool) {
-		self.data.set(4, value);
-	}
-
-	pub fn get_timer2_overflow(&self) -> bool {
-		self.data[5]
-	}
-
-	pub fn set_timer2_overflow(&mut self, value: bool) {
-		self.data.set(5, value);
-	}
-
-	pub fn get_timer3_overflow(&self) -> bool {
-		self.data[6]
-	}
-
-	pub fn set_timer3_overflow(&mut self, value: bool) {
-		self.data.set(6, value);
-	}
-
-	pub fn get_serial_communication(&self) -> bool {
-		self.data[7]
-	}
-
-	pub fn set_serial_communication(&mut self, value: bool) {
-		self.data.set(7, value);
-	}
-
-	pub fn get_dma0(&self) -> bool {
-		self.data[8]
-	}
-
-	pub fn set_dma0(&mut self, value: bool) {
-		self.data.set(8, value);
-	}
-
-	pub fn get_dma1(&self) -> bool {
-		self.data[9]
-	}
-
-	pub fn set_dma1(&mut self, value: bool) {
-		self.data.set(9, value);
-	}
-
-	pub fn get_dma2(&self) -> bool {
-		self.data[10]
-	}
-
-	pub fn set_dma2(&mut self, value: bool) {
-		self.data.set(10, value);
-	}
-
-	pub fn get_dma3(&self) -> bool {
-		self.data[11]
-	}
-
-	pub fn set_dma3(&mut self, value: bool) {
-		self.data.set(11, value);
-	}
-
-	pub fn get_keypad(&self) -> bool {
-		self.data[12]
-	}
-
-	pub fn set_keypad(&mut self, value: bool) {
-		self.data.set(12, value);
-	}
-
-	pub fn get_cartridge(&self) -> bool {
-		self.data[13]
-	}
-
-	pub fn set_cartridge(&mut self, value: bool) {
-		self.data.set(13, value);
-	}
-}
-
-/// Undocumented - Post Boot / Debug Control (R/W)
-pub struct PostBootFlag {
-	data: Gba8BitRegister,
-}
-
-impl PostBootFlag {
-	pub fn new() -> Self {
-		Self { data: bitarr![Lsb0, u8; 0; 8] }
-	}
-
-	pub fn get_is_not_first(&self) -> bool {
-		self.data[0]
-	}
-}
-
-/// Undocumented - Low Power Mode Control (W)
-pub struct HaltControl {
-	data: Gba8BitRegister,
-}
-
-impl HaltControl {
-	pub fn new() -> Self {
-		Self { data: bitarr![Lsb0, u8; 0; 8] }
-	}
-
-	pub fn get_is_stop(&self) -> bool {
-		self.data[7]
-	}
-}
-
-/// Sound PWM Control (R/W)
-pub struct SoundBias {
-	data: Gba16BitRegister,
-}
-
-impl SoundBias {
-	pub fn new() -> Self {
-		let mut result = Self { data: bitarr![Lsb0, u16; 0; 16] };
-		result.data.store_le(0x200u16);
-
-		result
-	}
-
-	pub fn get_bias_level(&self) -> u16 {
-		self.data[1..=9].load_le()
-	}
-
-	pub fn set_bias_level(&mut self, value: u16) {
-		self.data[1..=9].store_le(value);
-	}
-
-	pub fn get_amplitude_res(&self) -> u8 {
-		self.data[14..=15].load_le()
-	}
+bitfield! {
+	/// Sound PWM Control (R/W)
+	pub struct SoundBias(u32);
+	impl Debug;
+	pub u16, get_bias_level, set_bias_level: 9, 1;
+	pub u8, get_amplitude_res, _: 15, 14;
 }
 
 /// Represents the hardware registers mapped to memory
@@ -326,13 +105,13 @@ pub struct IORegisters {
 impl IORegisters {
 	pub fn new() -> Self {
 		Self {
-			sound_bias: SoundBias::new(),
-			key_input: KeyInput::new(),
-			interrupt_enable: IE::new(),
-			interrupt_request: IF::new(),
+			sound_bias: SoundBias(0x200),
+			key_input: KeyInput(0),
+			interrupt_enable: IE(0),
+			interrupt_request: IF(0),
 			ime: false,
-			post_flag: PostBootFlag::new(),
-			halt_cnt: HaltControl::new(),
+			post_flag: PostBootFlag(0),
+			halt_cnt: HaltControl(0),
 			halted: false,
 		}
 	}
@@ -371,12 +150,24 @@ impl MemoryInterface for IORegisters {
 		let addr = if address & 0xffff == 0x8000 { 0x800 } else { address & 0x00ff_ffff };
 		let shift = (addr as usize & 0x1) * 8;
 		match addr & !0x1 {
-			SOUNDBIAS_ADDRESS => self.sound_bias.data[shift..shift + 8].load_le(),
-			KEYINPUT_ADDRESS => self.key_input.data[shift..shift + 8].load_le(),
-			IE_ADDRESS => self.interrupt_enable.data[shift..shift + 8].load_le(),
-			IF_ADDRESS => self.interrupt_request.data[shift..shift + 8].load_le(),
-			IME_ADDRESS => if shift == 0 { self.ime as u8 } else { 0 },
-			POSTFLG_ADDRESS => if shift == 0 { self.post_flag.data.load_le() } else { 0 },
+			SOUNDBIAS_ADDRESS => self.sound_bias.bit_range(shift + 7, shift),
+			KEYINPUT_ADDRESS => self.key_input.bit_range(shift + 7, shift),
+			IE_ADDRESS => self.interrupt_enable.bit_range(shift + 7, shift),
+			IF_ADDRESS => self.interrupt_request.bit_range(shift + 7, shift),
+			IME_ADDRESS => {
+				if shift == 0 {
+					self.ime as u8
+				} else {
+					0
+				}
+			}
+			POSTFLG_ADDRESS => {
+				if shift == 0 {
+					self.post_flag.0
+				} else {
+					0
+				}
+			}
 			_ => 0x0, // TODO: Return proper invalid value
 		}
 	}
@@ -385,23 +176,23 @@ impl MemoryInterface for IORegisters {
 		let addr = if address & 0xffff == 0x8000 { 0x800 } else { address & 0x00ff_ffff };
 		let shift = (addr as usize & 0x1) * 8;
 		match addr & !0x1 {
-			SOUNDBIAS_ADDRESS => self.sound_bias.data[shift..shift + 8].store_le(value),
-			IE_ADDRESS => self.interrupt_enable.data[shift..shift + 8].store_le(value),
+			SOUNDBIAS_ADDRESS => self.sound_bias.set_bit_range(shift + 7, shift, value),
+			IE_ADDRESS => self.interrupt_enable.set_bit_range(shift + 7, shift, value),
 			IF_ADDRESS => {
-				let current_if = self.interrupt_request.data.load_le::<u16>();
-				self.interrupt_request.data.store_le(!((value as u16) << shift) & current_if);
+				let current_if = self.interrupt_request.0;
+				self.interrupt_request.0 = !((value as u16) << shift) & current_if;
 			}
 			IME_ADDRESS => {
 				if shift == 0 {
-					self.ime = value.view_bits::<Lsb0>()[0];
+					self.ime = value.bit(0);
 				}
 			}
 			POSTFLG_ADDRESS => {
 				if addr == HALTCNT_ADDRESS {
-					self.halt_cnt.data.store_le(value);
+					self.halt_cnt.0 = value;
 					self.halted = true;
 				} else {
-					self.post_flag.data.store_le(value);
+					self.post_flag.0 = value;
 				}
 			}
 			_ => {}
@@ -411,33 +202,34 @@ impl MemoryInterface for IORegisters {
 	fn read_16(&self, address: u32) -> u16 {
 		let addr = if address & 0xffff == 0x8000 { 0x800 } else { address & 0x00ff_ffff };
 		match addr {
-			SOUNDBIAS_ADDRESS => self.sound_bias.data.load_le(),
-			KEYINPUT_ADDRESS => self.key_input.data.load_le(),
-			IE_ADDRESS => self.interrupt_enable.data.load_le(),
-			IF_ADDRESS => self.interrupt_request.data.load_le(),
+			SOUNDBIAS_ADDRESS => self.sound_bias.0 as u16,
+			KEYINPUT_ADDRESS => self.key_input.0,
+			IE_ADDRESS => self.interrupt_enable.0,
+			IF_ADDRESS => self.interrupt_request.0,
 			IME_ADDRESS => self.ime as u16,
-			POSTFLG_ADDRESS => self.post_flag.data.load_le(),
+			POSTFLG_ADDRESS => self.post_flag.0 as u16,
 			_ => 0x0, // TODO: Return proper invalid value
 		}
 	}
 
 	fn write_16(&mut self, address: u32, value: u16) {
 		let addr = if address & 0xffff == 0x8000 { 0x800 } else { address & 0x00ff_ffff };
+		let shift = (addr as usize & 0x2) * 16;
 		match addr {
-			IE_ADDRESS => self.interrupt_enable.data.store_le(value),
+			IE_ADDRESS => self.interrupt_enable.0 = value,
 			IF_ADDRESS => {
-				let current_if = self.interrupt_request.data.load_le::<u16>();
-				self.interrupt_request.data.store_le(!value & current_if);
+				let current_if = self.interrupt_request.0;
+				self.interrupt_request.0 = !value & current_if;
 			}
 			IME_ADDRESS => {
-				self.ime = value.view_bits::<Lsb0>()[0];
+				self.ime = value.bit(0);
 			}
 			POSTFLG_ADDRESS => {
-				self.post_flag.data.store_le(value as u8);
-				self.halt_cnt.data.store_le((value >> 8) as u8);
+				self.post_flag.0 = value as u8;
+				self.halt_cnt.0 = (value >> 8) as u8;
 				self.halted = true;
 			}
-			SOUNDBIAS_ADDRESS => self.sound_bias.data.store_le(value),
+			SOUNDBIAS_ADDRESS => self.sound_bias.set_bit_range(shift + 15, shift, value),
 			_ => {}
 		}
 	}
@@ -445,11 +237,11 @@ impl MemoryInterface for IORegisters {
 	fn read_32(&self, address: u32) -> u32 {
 		let addr = if address & 0xffff == 0x8000 { 0x800 } else { address & 0x00ff_ffff };
 		match addr {
-			SOUNDBIAS_ADDRESS => self.sound_bias.data.load_le::<u32>(),
-			KEYINPUT_ADDRESS => self.key_input.data.load_le(),
-			IE_ADDRESS => self.interrupt_enable.data.load_le::<u32>() | (self.interrupt_request.data.load_le::<u32>() << 16),
+			SOUNDBIAS_ADDRESS => self.sound_bias.0,
+			KEYINPUT_ADDRESS => self.key_input.0 as u32,
+			IE_ADDRESS => self.interrupt_enable.0 as u32 | ((self.interrupt_request.0 as u32) << 16),
 			IME_ADDRESS => self.ime as u32,
-			POSTFLG_ADDRESS => self.post_flag.data.load_le(),
+			POSTFLG_ADDRESS => self.post_flag.0 as u32,
 			_ => 0x0, // TODO: Return proper invalid value
 		}
 	}
@@ -458,20 +250,20 @@ impl MemoryInterface for IORegisters {
 		let addr = if address & 0xffff == 0x8000 { 0x800 } else { address & 0x00ff_ffff };
 		match addr {
 			IE_ADDRESS => {
-				self.interrupt_enable.data.store_le(value as u16);
+				self.interrupt_enable.0 = value as u16;
 
-				let current_if = self.interrupt_request.data.load_le::<u16>();
-				self.interrupt_request.data.store_le(!((value << 16) as u16) & current_if);
+				let current_if = self.interrupt_request.0;
+				self.interrupt_request.0 = !((value << 16) as u16) & current_if;
 			}
 			IME_ADDRESS => {
-				self.ime = value.view_bits::<Lsb0>()[0];
+				self.ime = value.bit(0);
 			}
 			POSTFLG_ADDRESS => {
-				self.post_flag.data.store_le(value as u8);
-				self.halt_cnt.data.store_le((value >> 8) as u8);
+				self.post_flag.0 = value as u8;
+				self.halt_cnt.0 = (value >> 8) as u8;
 				self.halted = true;
 			}
-			SOUNDBIAS_ADDRESS => self.sound_bias.data.store_le(value as u16),
+			SOUNDBIAS_ADDRESS => self.sound_bias.0 = value,
 			_ => {}
 		}
 	}

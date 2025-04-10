@@ -1,7 +1,3 @@
-use bitvec::array::BitArray;
-use bitvec::order::Lsb0;
-use bitvec::prelude::BitSlice;
-
 use crate::ppu::{PPU, PPU_REGISTERS_END};
 use crate::system::io::IORegisters;
 
@@ -30,12 +26,12 @@ pub const CARTRIDGE_WS2_LO: u32 = 0x0C00_0000;
 pub const CARTRIDGE_WS2_HI: u32 = 0x0D00_0000;
 pub const CARTRIDGE_SRAM_LO: u32 = 0x0E00_0000;
 
-pub type Gba32BitSlice = BitSlice<Lsb0, u32>;
-pub type Gba16BitSlice = BitSlice<Lsb0, u16>;
-pub type Gba8BitSlice = BitSlice<Lsb0, u8>;
-pub type Gba32BitRegister = BitArray<Lsb0, [u32; 1]>;
-pub type Gba16BitRegister = BitArray<Lsb0, [u16; 1]>;
-pub type Gba8BitRegister = BitArray<Lsb0, [u8; 1]>;
+// pub type Gba32BitSlice = BitSlice<Lsb0, u32>;
+// pub type Gba16BitSlice = BitSlice<Lsb0, u16>;
+// pub type Gba8BitSlice = BitSlice<Lsb0, u8>;
+// pub type Gba32BitRegister = BitArray<Lsb0, [u32; 1]>;
+// pub type Gba16BitRegister = BitArray<Lsb0, [u16; 1]>;
+// pub type Gba8BitRegister = BitArray<Lsb0, [u8; 1]>;
 
 /// Provides read/write access to the system
 pub trait MemoryInterface {

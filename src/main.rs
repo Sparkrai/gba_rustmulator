@@ -3,26 +3,22 @@ use std::io::{Read, Write};
 use std::rc::Rc;
 use std::time::{Duration, Instant};
 
-use bitvec::prelude::*;
 use glium::glutin::event::{ElementState, Event, VirtualKeyCode, WindowEvent};
 use glium::glutin::event_loop::ControlFlow;
 use glium::uniforms::{SamplerBehavior, SamplerWrapFunction};
 use glium::Surface;
 use imgui::*;
 
-use arm7tdmi::cpu::*;
-use system::*;
+use gba_rustmulator::system::*;
+use gba_rustmulator::{
+	arm7tdmi::{cpu::*, EExceptionType},
+	windowing,
+};
 
-use crate::debugging::disassembling::disassemble_instruction;
-use crate::debugging::{build_cpu_debug_window, build_io_registers_window, build_memory_debug_window, build_sprites_debug_window, build_tiles_debug_window};
-use crate::ppu::{EVideoMode, SpriteEntry, OAM_SIZE, SPRITE_PALETTE_START_INDEX, SPRITE_TILES_START_ADDRESS, VRAM_SIZE};
-use crate::windowing::System;
-
-mod arm7tdmi;
-mod debugging;
-mod ppu;
-mod system;
-mod windowing;
+use gba_rustmulator::debugging::disassembling::disassemble_instruction;
+use gba_rustmulator::debugging::{build_cpu_debug_window, build_io_registers_window, build_memory_debug_window, build_sprites_debug_window, build_tiles_debug_window};
+use gba_rustmulator::ppu::{EVideoMode, SpriteEntry, OAM_SIZE, SPRITE_PALETTE_START_INDEX, SPRITE_TILES_START_ADDRESS, VRAM_SIZE};
+use gba_rustmulator::windowing::System;
 
 fn main() {
 	let system = windowing::init("GBA Rustmulator");
@@ -119,19 +115,19 @@ fn main() {
 									&& bus.ppu.get_disp_stat().get_v_counter_irq()
 								{
 									bus.io_regs.get_mut_if().set_v_counter_match(true);
-									cpu.exception(crate::arm7tdmi::EExceptionType::Irq);
+									cpu.exception(EExceptionType::Irq);
 									bus.io_regs.halted = false;
 								}
 
 								// H-Blank
 								if h_blank_irq && bus.io_regs.get_ime() && bus.io_regs.get_ie().get_h_blank() && bus.ppu.get_disp_stat().get_h_blank_irq() {
 									bus.io_regs.get_mut_if().set_h_blank(true);
-									cpu.exception(crate::arm7tdmi::EExceptionType::Irq);
+									cpu.exception(EExceptionType::Irq);
 									bus.io_regs.halted = false;
 								} else if v_blank_irq && bus.io_regs.get_ime() && bus.io_regs.get_ie().get_v_blank() && bus.ppu.get_disp_stat().get_v_blank_irq() {
 									// V-Blank
 									bus.io_regs.get_mut_if().set_v_blank(true);
-									cpu.exception(crate::arm7tdmi::EExceptionType::Irq);
+									cpu.exception(EExceptionType::Irq);
 									bus.io_regs.halted = false;
 								}
 

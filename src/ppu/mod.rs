@@ -1,9 +1,9 @@
-use bitvec::prelude::*;
+use bitfield::*;
 use num_derive::*;
 use num_traits::FromPrimitive;
 
 use crate::arm7tdmi::sign_extend;
-use crate::system::{Gba16BitRegister, Gba32BitRegister, Gba8BitSlice, MemoryInterface};
+use crate::system::{Gba8BitSlice, MemoryInterface};
 use crate::system::{OAM_ADDR, PALETTE_RAM_ADDR, VRAM_ADDR};
 
 pub const PPU_REGISTERS_END: u32 = 0x56;
@@ -95,10 +95,9 @@ pub struct Color {
 
 impl Color {
 	pub fn new(data: u16) -> Self {
-		let bits = data.view_bits::<Lsb0>();
-		let r = bits[0x0..=0x4].load_le::<u8>();
-		let g = bits[0x5..=0x9].load_le::<u8>();
-		let b = bits[0xa..=0xe].load_le::<u8>();
+		let r: u8 = data.bit_range(0x4, 0x0);
+		let g: u8 = data.bit_range(0x9, 0x5);
+		let b: u8 = data.bit_range(0xe, 0xa);
 
 		// TODO: Gamma correction!!!
 		//		const LCD_GAMMA: f32 = 4.0;
@@ -134,13 +133,24 @@ impl Color {
 	}
 
 	pub fn get_value(&self) -> u16 {
-		let mut result = bitarr![Lsb0, u16; 0; 16];
-		result[0..5].store_le((self.red * 31.0) as u8);
-		result[5..10].store_le((self.green * 31.0) as u8);
-		result[10..15].store_le((self.blue * 31.0) as u8);
+		let mut result = 0;
+		result.set_bit_range(4, 0, (self.red * 31.0) as u8);
+		result.set_bit_range(9, 5, (self.red * 31.0) as u8);
+		result.set_bit_range(14, 10, (self.red * 31.0) as u8);
 
-		result.load_le()
+		result
 	}
+}
+
+bitfield! {
+	u8;
+	/// Key Status (R)
+	pub struct WindowDasdimensions([u16]);
+	impl Debug;
+	pub _, get_x1: 15, 8;
+	pub _, get_x2: 7, 0;
+	pub _, get_y1: 31, 24;
+	pub _, get_y2: 23, 16;
 }
 
 pub struct WindowDimensions {
