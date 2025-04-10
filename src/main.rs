@@ -1,21 +1,38 @@
-mod cpu;
-
 use std::fs::File;
 use std::io::Read;
 
-fn main() {
-	let mut thumb_mode = false;
+use cpu::*;
+use memory::*;
 
-	let mut data = Vec::<u8>::new();
-	if File::open("data/demos/hello.gba").unwrap().read_to_end(&mut data).is_ok() {
+mod cpu;
+mod memory;
+
+fn main() {
+	let mut cpu = CPU::new();
+	let mut bus = MemoryBus::new();
+
+	// Start in System mode
+	cpu.cpsr.set_mode_bits(0x1f);
+
+	let mut bios_data = Vec::<u8>::new();
+	File::open("data/bios.gba").expect("Bios couldn't be opened!").read_to_end(&mut bios_data).unwrap();
+	bus.load_bios(&bios_data);
+
+	let mut cartridge_data = Vec::<u8>::new();
+	if File::open("data/demos/hello.gba").expect("Cartridge couldn't be opened!").read_to_end(&mut cartridge_data).is_ok() {
+		bus.load_cartridge(&cartridge_data);
+
+		let mut thumb_mode = false;
 		let mut pc = 0;
-		while pc + 2 < data.len() {
+		while pc + 2 < bios_data.len() {
 			if thumb_mode {
-				decode_thumb(&mut thumb_mode, &mut data, &mut pc);
+				decode_thumb(&mut thumb_mode, &mut bios_data, &mut pc);
 			} else {
-				decode_arm(&mut thumb_mode, &mut data, &mut pc);
+				decode_arm(&mut thumb_mode, &mut bios_data, &mut pc);
 			}
 		}
+	} else {
+		println!("Cartridge couldn't be read!");
 	}
 }
 
