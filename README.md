@@ -1,6 +1,6 @@
 # GBA Rustmulator
 
-This is my attempt at developint an emulator for the GameBoy Advance:registered: completely in Rust.
+This is my attempt at developint an emulator for the GameBoy Advance :registered: completely in Rust.
 
 ## Status
 
