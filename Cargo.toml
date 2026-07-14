@@ -18,17 +18,15 @@
     num-derive = "0.3"
     spin_sleep = "1.0"
     clipboard = "0.5"
-    bitvec = "0.21"
 
 [dev-dependencies]
     criterion = "0.3"
-    bitvec = "0.21"
     modular-bitfield = "0.11"
     bit_field = "0.10"
 
-[[bench]]
-    name = "bit_libraries"
-    harness = false
+# [[bench]]
+#     name = "bit_libraries"
+#     harness = false
 
 [[bench]]
     name = "bios"
